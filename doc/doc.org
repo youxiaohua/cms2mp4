@@ -1,0 +1,7 @@
+* cms-demuxer.js  remux   
+  把cms-demuxer.js 是把数据拆分,然后通过remux里面的文件转换成mp4
+* alaw.js
+  
+
+* lamejs
+  音频解析文件

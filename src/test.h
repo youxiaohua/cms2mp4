@@ -36,11 +36,13 @@ typedef struct{
 }CMS_DATA;
 
 
-
-int width;
-int height;
-int rate;
-int timeScale;
+typedef struct{
+    int width;
+    int height;
+    int vedio_rate;
+    int timeScale;
+    int audio_rate;
+}header
 MP4FileHandle handle;
 bool first = true;
 int data_length = 0;

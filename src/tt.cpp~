@@ -1,0 +1,39 @@
+#include <stdio.h>
+#include "cms_parser.h"
+
+void callback((CMS_Parser *parser, CMS_EVENT event, void *data, int size, void *context)
+{
+    switch (event) {
+    case CMS_E_HEADER_FIELD      : {
+        KEY_VALUE *kv = (KEY_VALUE)data;
+        printf("key=%s value=%s\n", kv->key, kv->value);
+        break;
+    }
+    case CMS_E_HEADER_END        : break;
+    case CMS_E_PART_HEADER       : break;
+    case CMS_E_PART_HEADER_FIELD : break;
+    case CMS_E_PART_HEADER_END   : break;
+    case CMS_E_PART_END          : break;
+    case CMS_E_CHUNK             : {
+        char *d = data;
+        
+        break;
+    }
+    case CMS_E_PARSE_FAIL        : break;
+    }
+}
+
+int main(int argc, char**argv)
+{
+    CMS_Parser *cms = new CMS_Parser(1024 * 1024);
+    cms->set_callback(callback);
+    char buf[4096];
+    while (int len = read(fd, buf, sizeof(buf))) {
+        if (len > 0) {
+            cms->parse(buf, len);
+        } else {
+            break;
+        }
+    }
+}
+

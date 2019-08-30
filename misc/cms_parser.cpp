@@ -185,6 +185,7 @@ void CMS_Parser::parse(char *data, int len)
                             }
                             if (strcmp(key, "f") == 0) {
                                 if (strcmp(value, "i") == 0) {
+
                                     part_type = CMS_PART_H264_i_FRAME;
                                 } else if (strcmp(value, "p") == 0) {
                                     part_type = CMS_PART_H264_p_FRAME;

@@ -3,8 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include "mp4v2/mp4v2.h"
-//#include "lame/lame.h"
-#include "faac.h"
+#include <faac.h>
 
 
 #define CMS_FLAG_TRACK_FOUND 0x01
@@ -81,14 +80,15 @@ int getNalu(FILE *File,unsigned char *buf,bool *end,long data_length)
     memset(buf,0,1024*1024);
     int pos;
 
-    if((pos = fread(buf, 1, 4, File)) <= 0)
+    if ((pos = fread(buf, 1, 4, File)) <= 0) {
         return -1;
+    }
     data_length -= 4;
-    if(buf[0] != 0 || buf[1] != 0 || buf[2] != 0 || buf[3] != 1)
+    if (buf[0] != 0 || buf[1] != 0 || buf[2] != 0 || buf[3] != 1) {
         return -1;
+    }
     pos = 4;
-    while(1)
-    {
+    while(1) {
         if(feof(File)){*end = true; break;}
         if(data_length == 0){        
             *end = true;
@@ -206,7 +206,7 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
 
 
 
-int cms_parser( FILE *fp , char *Mp4File)
+int cms_to_mp4( FILE *fp , char *Mp4File)
 {
     header head     = { 0 };
     head.width      = 1280;
@@ -251,7 +251,7 @@ int cms_parser( FILE *fp , char *Mp4File)
     unsigned char *pbAACBuffer = ( unsigned char * )malloc(nMaxOutputBytes);
     printf( "每次解码pcm数据的大小[%d]\n", nPCMBufferSize );
     printf( "aac数据的大小[%d]\n", nMaxOutputBytes );
-    sleep(1);
+    /* getchar(); */
     //获取当前编码器的信息
     
     faacEncConfigurationPtr pConfiguration = { 0 };
@@ -314,7 +314,7 @@ int cms_parser( FILE *fp , char *Mp4File)
                 }
                 line_buf_ptr = 0;
             }else{
-                if(line_buf_ptr <= 1023) {
+                if(line_buf_ptr < sizeof(line_buf)) {
                     line_buf[line_buf_ptr] = ch;
                     line_buf_ptr++;
                     line_buf[line_buf_ptr] = 0;
@@ -364,7 +364,7 @@ int cms_parser( FILE *fp , char *Mp4File)
                                 MP4WriteSample( handle, audioId, pbAACBuffer, nRet, MP4_INVALID_DURATION, 0, 1 );
                                 pcm_ptr = 0;
                                 memset(pbPCMBuffer, 0, nPCMBufferSize);
-                                }
+                            }
                         
                         }    
                         /*
@@ -408,7 +408,7 @@ int cms_parser( FILE *fp , char *Mp4File)
                
                 line_buf_ptr = 0;
             } else {
-                if (line_buf_ptr <= 1023) {
+                if (line_buf_ptr < sizeof(line_buf)) {
                     line_buf[line_buf_ptr] = ch;
                     line_buf_ptr++;
                     line_buf[line_buf_ptr] = 0;
@@ -443,7 +443,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     FILE *fp = fopen(argv[1], "r");
-    cms_parser(fp,argv[2]);
+    cms_to_mp4(fp,argv[2]);
     fclose(fp);
     return 0;
 }

@@ -134,7 +134,7 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
             
             if ( first )
             {
-                //printf("sps(%d)\n", len);
+                printf("sps(%d)\n", len);
                 videoId = MP4AddH264VideoTrack
                     (handle, 
                      head->timeScale,                  // 一秒钟多少timescale
@@ -167,7 +167,7 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
             
         case 0x08: // PPS
             if ( !first ) { break; }
-            //printf("pps(%d)\n", len);
+            printf("pps(%d)\n", len);
             first = false;
             MP4AddH264PictureParameterSet( handle, videoId, nalu, len );
             MP4SetVideoProfileLevel( handle, 0x7F );

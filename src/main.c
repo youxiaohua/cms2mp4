@@ -120,6 +120,7 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
     while ( !end ) {
 
         len = getNalu( File, buf, &end, data_length );
+        printf("------len : %d\n",len);
         if ( len <= 0 ) { break; }
         if ( buf[0] != 0 || buf[1] != 0 || buf[2] != 0 || buf[3] != 1 ) {
             continue;
@@ -152,7 +153,7 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
                     printf("创建视频 track 失败\n");
                     return -1;
                 }
-                audioId = MP4AddAudioTrack( handle, 8000, 1024, MP4_MPEG4_AUDIO_TYPE );
+                audioId = MP4AddAudioTrack( handle, 8000, 1100, MP4_MPEG4_AUDIO_TYPE );
                 if ( audioId == MP4_INVALID_TRACK_ID )
                 {
                     printf("创建音频 track 失败\n");
@@ -178,7 +179,7 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
             //printf( "SEI(%d)\n", len );
             break;
         case 0x05:
-            //printf( "IDR slice(%d)\n", len );
+            printf( "IDR slice(%d)\n", len );
             buf[0] = ( len >> 24)&0xFF;
             buf[1] = ( len >> 16)&0xFF;
             buf[2] = ( len >> 8 )&0xFF;
@@ -187,7 +188,7 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
             
             break;
         default:
-            //printf("slice(%d)\n", len);
+            printf("slice(%d)\n", len);
             buf[0] = ( len >> 24)&0xFF;
             buf[1] = ( len >> 16)&0xFF;
             buf[2] = ( len >> 8 )&0xFF;

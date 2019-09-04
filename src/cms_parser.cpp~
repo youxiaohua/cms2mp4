@@ -237,7 +237,6 @@ void CMS_Parser::parse(char *data, int len)
                     memcpy(cache, data + pos, cached_len);
                 }
             }
-            
             emit(CMS_E_CHUNK, chunk, data + len - chunk - boundary_ptr);
         }
     }

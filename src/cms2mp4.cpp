@@ -1,19 +1,24 @@
 #include <stdio.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <faac.h>
 #include <string.h>
+
 #include "cms_parser.h"
 #include "mp4v2/mp4v2.h"
 
 
 bool ISVIDEO = true;
-
+bool NewVideoData = true;
 typedef struct {
     bool          frist = true;
     int           Width;
     int           Height;
     int           VideoRate;
     int           AudioRate;
+    unsigned char *VideoData;
     MP4TrackId    VideoId;
     MP4TrackId    AudioId;
     MP4FileHandle handle;
@@ -22,7 +27,7 @@ typedef struct {
  
 
 typedef struct {
-    faacEncHandle handle;            //文件操作句柄
+    faacEncHandle handle;           //文件操作句柄
     unsigned long SampleRate;       //采样率
     unsigned int  Channels;         //单双声道
     unsigned int  PCMBitSize;       //pcm数据位数
@@ -77,6 +82,7 @@ int Get_Nalu(unsigned char *data, int surplus_len)
 {
     int ptr = 0;
     //printf("data[4] : %c %c %c %c\n",data[0], data[1],data[2], data[3]);
+    //sleep(1);
     if (data[ptr] == 0 && data[ptr + 1] == 0 && data[ptr + 2] == 0 && data[ptr + 3] == 1) {
         while (surplus_len > 0) {
             ptr++;
@@ -95,6 +101,7 @@ int Write_Mp4(unsigned char *data, int size)
 {
     int start    = 0;
     while(size > 0) {
+        printf("size : %d\n",size);
         int len = Get_Nalu(data, size);
         if (len == -1 ) {
             //printf("len : %d\n",len);
@@ -133,6 +140,7 @@ int Write_Mp4(unsigned char *data, int size)
                 printf("pps(%d)\n", len);
                 MP4AddH264PictureParameterSet( mp4v2->handle, mp4v2->VideoId, nalu, len );
                 MP4SetVideoProfileLevel( mp4v2->handle, 0x7F );
+                mp4v2->frist = false;
             }
             break;
         case 0x06://SEI信息
@@ -166,18 +174,18 @@ int callback(CMS_Parser *parser, CMS_EVENT event, void *data, int size, void *co
 {
     switch (event) {
     case CMS_E_HEADER_FIELD      : {
+        //printf("CMS_E_HEADER_FIELD\n");
         KEY_VALUE *kv = (KEY_VALUE *)data;
-        printf("key=%s value=%s\n", kv->key, kv->value);
+        //printf("key=%s value=%s\n", kv->key, kv->value);
         break;
     }
     case CMS_E_HEADER_END        :
-        
         break;
     case CMS_E_PART_HEADER       :
-        
         break;
     case CMS_E_PART_HEADER_FIELD :{
         KEY_VALUE *kv = (KEY_VALUE *)data;
+        //printf("%s %s\n", kv->key, kv->value);
         if (strcmp(kv->value,"p") == 0 || strcmp(kv->value,"i") == 0) {
             ISVIDEO = true;
         } else if (strcmp(kv->value,"a") == 0) {
@@ -186,26 +194,30 @@ int callback(CMS_Parser *parser, CMS_EVENT event, void *data, int size, void *co
         break;
     }
     case CMS_E_PART_HEADER_END   :
-        
         break;
     case CMS_E_PART_END          :
-        
+        //printf("CMS_E_PART_END\n");
         break;
     case CMS_E_CHUNK             : {
+        printf("CMS_E_CHUNK ---- %d \n", size);
         unsigned char *d      = (unsigned char *)data;
-        printf("len:%d\n", size);
-        /*if (ISVIDEO) {
-            if (Write_Mp4(d, size) == -1){
-                //printf("H264视频数据错误\n");
+        if (ISVIDEO) {
+            if () {
+                
+            }
+            if (Write_Mp4(d, size) == -1) {
+                printf("H264视频数据错误\n");
             }
         } else {
 
             
-        }*/
+        }
         break;
     }
-    case CMS_E_PARSE_FAIL        : break;
-     }
+    case CMS_E_PARSE_FAIL        :
+        //printf("CMS_E_PARSE_FAIL\n");
+        break;
+    }
 
 
 
@@ -221,7 +233,7 @@ int main(int argc, char **argv)
         printf("Usage: test <cms file> <mp4 file>\n");
         return 1;
      }
-    FILE *CmsFile = fopen(argv[1], "rb");
+    int CmsFile = open(argv[1], O_RDONLY);
     
     //mp4v2初始化
     mp4v2 = (MP4_INFORMATION *)malloc(sizeof(MP4_INFORMATION));
@@ -245,16 +257,16 @@ int main(int argc, char **argv)
     pConfiguration->inputFormat = FAAC_INPUT_16BIT;
     faacEncSetConfiguration( faac->handle, pConfiguration );
     
-
-
+    
     
     CMS_Parser *cms = new CMS_Parser(1024 * 1024);
     cms->set_callback(callback, NULL);
     char buf[4096];
-    while (int len = fread(buf, sizeof(buf), 1, CmsFile )) {
+    while (int len = read(CmsFile, buf, sizeof(buf))) {
         if(len > 0){
             cms->parse(buf, len);
         } else {
+           
             break;
         }
 

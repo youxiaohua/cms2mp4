@@ -1,0 +1,10 @@
+#include "2MP4.h"
+
+
+
+int main(){
+    BOX_AVC1 avc1;
+    BOX header;
+    printf("%d  %d\n",sizeof(avc1), sizeof(header));
+    return 0;
+}

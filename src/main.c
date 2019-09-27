@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -12,6 +14,7 @@
 bool first = true; //判断是否是第一次读取数据,如果是则会创建视频和音频的通道
 MP4TrackId videoId;
 MP4TrackId audioId;
+int AlawFile;
 typedef enum{
     CMS_FILE_HEADER = 0,
     CMS_BOUNDARY,
@@ -89,14 +92,14 @@ int getNalu(FILE *File,unsigned char *buf,bool *end,long data_length)
     }
     pos = 4;
     while(1) {
-        if(feof(File)){*end = true; break;}
-        if(data_length == 0){        
+        if (feof(File)) { *end = true; break; }
+        if (data_length == 0) {        
             *end = true;
             break;
         }
         buf[pos] = fgetc(File);
         data_length--;
-        if(buf[pos-3] == 0 && buf[pos-2] == 0 && buf[pos-1] == 0 && buf[pos] == 1)
+        if (buf[pos-3] == 0 && buf[pos-2] == 0 && buf[pos-1] == 0 && buf[pos] == 1)
         {
             fseek(File,-4,SEEK_CUR);
             data_length += 4;
@@ -107,7 +110,7 @@ int getNalu(FILE *File,unsigned char *buf,bool *end,long data_length)
     }
     return pos + 1;
 }
-int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length)
+int Write_Mp4(FILE *File, header *head, MP4FileHandle handle,  long data_length)
 {
     unsigned char *buf = malloc(1024*1024);
     unsigned char *nalu = NULL;
@@ -120,7 +123,6 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
     while ( !end ) {
 
         len = getNalu( File, buf, &end, data_length );
-        printf("------len : %d\n",len);
         if ( len <= 0 ) { break; }
         if ( buf[0] != 0 || buf[1] != 0 || buf[2] != 0 || buf[3] != 1 ) {
             continue;
@@ -139,9 +141,9 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
                 videoId = MP4AddH264VideoTrack
                     (handle, 
                      head->timeScale,                  // 一秒钟多少timescale
-                     8192,
+                     //8192,
                      //MP4_INVALID_DURATION,
-                     //head->timeScale / head->video_rate,     // 每个帧有多少个timescale
+                     head->timeScale / head->video_rate,     // 每个帧有多少个timescale
                      head->width,                      // width
                      head->height,                     // height
                      nalu[1],                          // sps[1] AVCProfileIndication
@@ -153,7 +155,8 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
                     printf("创建视频 track 失败\n");
                     return -1;
                 }
-                audioId = MP4AddAudioTrack( handle, 8000, 1100, MP4_MPEG4_AUDIO_TYPE );
+                
+                audioId = MP4AddAudioTrack( handle, 8000, 1024, MP4_MPEG4_AUDIO_TYPE );
                 if ( audioId == MP4_INVALID_TRACK_ID )
                 {
                     printf("创建音频 track 失败\n");
@@ -168,7 +171,7 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
             
         case 0x08: // PPS
             if ( !first ) { break; }
-            printf("pps(%d)\n", len);
+            //printf("pps(%d)\n", len);
             first = false;
             MP4AddH264PictureParameterSet( handle, videoId, nalu, len );
             MP4SetVideoProfileLevel( handle, 0x7F );
@@ -179,7 +182,7 @@ int Write_Mp4 (FILE *File, header *head, MP4FileHandle handle,  long data_length
             //printf( "SEI(%d)\n", len );
             break;
         case 0x05:
-            printf( "IDR slice(%d)\n", len );
+            //printf( "IDR slice(%d)\n", len );
             buf[0] = ( len >> 24)&0xFF;
             buf[1] = ( len >> 16)&0xFF;
             buf[2] = ( len >> 8 )&0xFF;
@@ -212,7 +215,7 @@ int cms_to_mp4( FILE *fp , char *Mp4File)
     header head     = { 0 };
     head.width      = 1280;
 	head.height     = 720;
-	head.video_rate = 15;
+	head.video_rate = 12;
 	head.timeScale  = 90000;
     
     MP4FileHandle handle    = NULL;
@@ -355,18 +358,21 @@ int cms_to_mp4( FILE *fp , char *Mp4File)
                         state = CMS_BOUNDARY;
                         break;
                     case CMS_AUDIO:{
+                        
                         int i;
                         for ( i = 0; i < 480; i++) {
                             unsigned char alaw = fgetc( fp );
+                            write(AlawFile, &alaw, 1);
                             pbPCMBuffer[pcm_ptr] = ALawDecompressTable[alaw];
                             pcm_ptr++;
                             if(pcm_ptr == nInputSamples) {
                                 nRet = faacEncEncode( hEncoder, (int*) pbPCMBuffer, pcm_ptr, pbAACBuffer, nMaxOutputBytes );
+                                printf("nRet : %d\n",nRet);
                                 MP4WriteSample( handle, audioId, pbAACBuffer, nRet, MP4_INVALID_DURATION, 0, 1 );
                                 pcm_ptr = 0;
                                 memset(pbPCMBuffer, 0, nPCMBufferSize);
-                            }
-                        
+                                }
+                            
                         }    
                         /*
                         //lame库 pcm转mp3
@@ -437,6 +443,7 @@ int cms_to_mp4( FILE *fp , char *Mp4File)
 }
 
 
+
 int main(int argc, char *argv[])
 {
     if (argc < 2) {
@@ -444,6 +451,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     FILE *fp = fopen(argv[1], "r");
+    AlawFile = open("./tmp/test.pcma", O_WRONLY | O_CREAT, 0644);
     cms_to_mp4(fp,argv[2]);
     fclose(fp);
     return 0;

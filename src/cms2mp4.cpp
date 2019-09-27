@@ -7,12 +7,11 @@
 #include <string.h>
 
 #include "cms_parser.h"
-#include "mp4v2/mp4v2.h"
+#include <mp4v2/mp4v2.h>
 
 
 
 typedef struct {
-
     int           Width;
     int           Height;
     int           VideoRate;
@@ -21,7 +20,7 @@ typedef struct {
     MP4TrackId    VideoId;
     MP4TrackId    AudioId;
     MP4FileHandle handle;
-}MP4_INFORMATION;
+} MP4_INFORMATION;
 
  
 
@@ -35,10 +34,9 @@ typedef struct {
     unsigned long MaxOutputBytes;   //编码后数据的最大大小
     short    int  *PCMBuffer;       //指向存放pcm数据的内存
     unsigned int  pcm_ptr;          
+} FAAC_INFORMATION;
 
-}FAAC_INFORMATION;
-
- unsigned short ALawDecompressTable[] =
+unsigned short ALawDecompressTable[] =
 {
     0xEA80, 0xEB80, 0xE880, 0xE980, 0xEE80, 0xEF80, 0xEC80, 0xED80,
     0xE280, 0xE380, 0xE080, 0xE180, 0xE680, 0xE780, 0xE480, 0xE580,
@@ -76,12 +74,15 @@ typedef struct {
 
 
 //全局变量
-bool ISVIDEO            = true;        //判断接受的数据是视频还是音频
-bool FRIST_WRITE_VIDEO  = true;        //判断是否第一次写入视频数据
+bool isvideo            = true;        //判断接受的数据是视频还是音频
+bool frist_write_video  = true;        //判断是否第一次写入视频数据
 FAAC_INFORMATION *faac  = NULL;        //结构体存放faac库解码需要的信息
 MP4_INFORMATION  *mp4v2 = NULL;        //结构体存放MP4v2库解码需要的信息
-unsigned char *VideoData;              //指向一块用来存放接受视频数据的信息
-
+unsigned char *VideoBuf;              //指向一块用来存放接受视频数据的信息
+int AudioFile;
+int AlawFile;
+int H264File;
+#define VIDEO_BUF_SIZE 1024 * 1024
 
 
 int Get_Nalu(unsigned char *data, int surplus_len)
@@ -101,51 +102,45 @@ int Get_Nalu(unsigned char *data, int surplus_len)
     }
 }
 
-int Write_Mp4(unsigned char *data, int size)
+int Write_Video(unsigned char *data, int size)
 {
     int start    = 0;
-    while(size > 0) {
+    while (size > 0) {
         int len = Get_Nalu(data, size);
         if (len == -1 ) {
             return len;            
         }
         unsigned char *nalu = data + 4;
-        char NaluType = nalu[0]&0x1f;
+        char NaluType = nalu[0] & 0x1f;
         
-        switch (NaluType)
-        {
+        switch (NaluType) {
         case 0x07: {// SPS
-            if ( FRIST_WRITE_VIDEO ) {
-                printf("sps(%d)\n", len);
-                mp4v2->VideoId = MP4AddH264VideoTrack
-                    (mp4v2->handle, 
-                     90000,                            // 一秒钟多少timescale
-                     8192,
-                     mp4v2->Width,                     // width
-                     mp4v2->Height,                    // height 
-                     nalu[1],                  // sps[1] AVCProfileIndication
-                     nalu[2],                  // sps[2] profile_compat
-                     nalu[3],                  // sps[3] AVCLevelIndication
-                     3);                               // 4 bytes length before each NAL unit
-                if ( mp4v2->VideoId == MP4_INVALID_TRACK_ID )
-                {
+            if (frist_write_video) {
+                mp4v2->VideoId = MP4AddH264VideoTrack(
+                    mp4v2->handle, 
+                    90000,         // 一秒钟多少timescale
+                    90000/12,
+                    mp4v2->Width,  // width
+                    mp4v2->Height, // height 
+                    nalu[1],       // sps[1] AVCProfileIndication
+                    nalu[2],       // sps[2] profile_compat
+                    nalu[3],       // sps[3] AVCLevelIndication
+                    3);            // 4 bytes length before each NAL unit
+                if (mp4v2->VideoId == MP4_INVALID_TRACK_ID ) {
                     printf("Create video track fail\n");
                     return -1;
                 }
-                
-                MP4AddH264SequenceParameterSet( mp4v2->handle, mp4v2->VideoId, nalu, len );
-                mp4v2->AudioId = MP4AddAudioTrack( mp4v2->handle, mp4v2->AudioRate, 1024, MP4_MPEG4_AUDIO_TYPE );
-                MP4SetAudioProfileLevel( mp4v2->handle, 0x02 );
-                
+                MP4AddH264SequenceParameterSet(mp4v2->handle, mp4v2->VideoId, nalu, len);
+                mp4v2->AudioId = MP4AddAudioTrack(mp4v2->handle, mp4v2->AudioRate, 1024, MP4_MPEG4_AUDIO_TYPE);
             }
-                break;
+            break;
         }
         case 0x08: // PPS
-            if (FRIST_WRITE_VIDEO) {
-                printf("pps(%d)\n", len);
+            if (frist_write_video) {
                 MP4AddH264PictureParameterSet( mp4v2->handle, mp4v2->VideoId, nalu, len );
                 MP4SetVideoProfileLevel( mp4v2->handle, 0x7F );
-                FRIST_WRITE_VIDEO = false;
+                MP4SetAudioProfileLevel( mp4v2->handle, 0x02 );
+                frist_write_video = false;
             }
             break;
         case 0x06://SEI信息
@@ -153,11 +148,11 @@ int Write_Mp4(unsigned char *data, int size)
             break;
         case 0x05:
             //printf( "IDR slice(%d)\n", len );
-            data[0] = ( len >> 24)&0xFF;
-            data[1] = ( len >> 16)&0xFF;
-            data[2] = ( len >> 8 )&0xFF;
-            data[3] = ( len >> 0 )&0xFF;
-            MP4WriteSample( mp4v2->handle, mp4v2->VideoId, data, len + 4 , MP4_INVALID_DURATION, 0, 1 );
+            data[0] = ( len >> 24) & 0xFF;
+            data[1] = ( len >> 16) & 0xFF;
+            data[2] = ( len >> 8 ) & 0xFF;
+            data[3] = ( len >> 0 ) & 0xFF;
+            MP4WriteSample(mp4v2->handle, mp4v2->VideoId, data, len + 4 , MP4_INVALID_DURATION, 0, 1 );
             break;
         default:
             //printf("slice(%d)\n", len);
@@ -165,14 +160,12 @@ int Write_Mp4(unsigned char *data, int size)
             data[1] = ( len >> 16)&0xFF;
             data[2] = ( len >> 8 )&0xFF;
             data[3] = ( len >> 0 )&0xFF;
-            MP4WriteSample( mp4v2->handle, mp4v2->VideoId, data, len + 4, MP4_INVALID_DURATION, 0, 0 );
-            
+            MP4WriteSample(mp4v2->handle, mp4v2->VideoId, data, len + 4, MP4_INVALID_DURATION, 0, 0 );
             break;
             
         }
-        data += len;
-        size -= len;
-    
+        data = data + len;
+        size = size - len;
     } 
 }
 int callback(CMS_Parser *parser, CMS_EVENT event, void *data, int size, void *context)
@@ -188,11 +181,12 @@ int callback(CMS_Parser *parser, CMS_EVENT event, void *data, int size, void *co
         break;
     case CMS_E_PART_HEADER_FIELD :{
         KEY_VALUE *kv = (KEY_VALUE *)data;
-        if (strcmp(kv->value,"p") == 0 || strcmp(kv->value,"i") == 0) {
-            ISVIDEO = true;
-        } else if (strcmp(kv->value,"a") == 0) {
-            
-            ISVIDEO = false;
+        if (strcmp(kv->key, "f") == 0) {
+            if (strcmp(kv->value, "p") == 0 || strcmp(kv->value, "i") == 0) {
+                isvideo = true;
+            } else if (strcmp(kv->value, "a") == 0) {
+                isvideo = false;
+            }
         }
         break;
     }
@@ -201,76 +195,79 @@ int callback(CMS_Parser *parser, CMS_EVENT event, void *data, int size, void *co
     case CMS_E_PART_END          :
         break;
     case CMS_E_CHUNK             : {
-        if (ISVIDEO) {
-            memcpy(VideoData + mp4v2->VideoSize, data, size);
+        if (isvideo) {
+            memcpy(VideoBuf + mp4v2->VideoSize, data, size);
+            write(H264File, data, size);
             mp4v2->VideoSize += size;
             if (mp4v2->VideoSize == parser->part_length) {
-                if(Write_Mp4(VideoData, parser->part_length) == -1){
+                if (Write_Video(VideoBuf, parser->part_length) < 0) {
                     printf("h264数据错误\n");
                     return -1;
                 }
-                memset(VideoData, 0, 1024 * 1024);
+                memset(VideoBuf, 0, VIDEO_BUF_SIZE);
                 mp4v2->VideoSize = 0;
             }
         } else {
-            printf();
+            /*
             int i;
-            unsigned char *d = (unsigned char *)data;
+            write(AlawFile, data, size);
             for ( i = 0; i < size; i++) {
-                unsigned char alaw = d[i];
+                unsigned char alaw = ((unsigned char*)data)[i];
                 faac->PCMBuffer[faac->pcm_ptr] = ALawDecompressTable[alaw];
                 faac->pcm_ptr++;
                 if(faac->pcm_ptr == faac->InputSamples) {
                     unsigned char AACBuffer[faac->MaxOutputBytes];
-                    int nRet = faacEncEncode( faac->handle,
-                                              (int*) faac->PCMBuffer,
-                                              faac->pcm_ptr,
-                                              AACBuffer,
-                                              faac->MaxOutputBytes );
-                    
-                    MP4WriteSample( mp4v2->handle,
-                                    mp4v2->AudioId,
-                                    AACBuffer,
-                                    nRet,
-                                    MP4_INVALID_DURATION,
-                                    0,
-                                    1 );
+                    write(AudioFile, faac->PCMBuffer, faac->pcm_ptr);
+                    write(AudioFile, "\r\n", 2);
+                    int ret = faacEncEncode(faac->handle,
+                                            (int*) faac->PCMBuffer,
+                                            faac->pcm_ptr,
+                                            AACBuffer,
+                                            faac->MaxOutputBytes );
+                    MP4WriteSample(mp4v2->handle,
+                                   mp4v2->AudioId,
+                                   AACBuffer,
+                                   ret);
+                   
                     faac->pcm_ptr = 0;
                     memset(faac->PCMBuffer, 0, faac->PCMBufferSize);
                 }
                 
-            }
+            }*/
+           
         }
             break;
     }
     case CMS_E_PARSE_FAIL        :
-        //printf("CMS_E_PARSE_FAIL\n");
         break;
     }
-
-
 
 }
 
 
 
-
-
 int main(int argc, char **argv)
 {
-    if (argc < 2) {
+    if (argc < 3) {
         printf("Usage: test <cms file> <mp4 file>\n");
         return 1;
      }
 
-    VideoData = (unsigned char *)malloc(1024*1024);
-    
+    VideoBuf = (unsigned char *)malloc(VIDEO_BUF_SIZE);
     int CmsFile = open(argv[1], O_RDONLY);
-    
+    if (CmsFile < 0) {
+        ///
+    }
+
+
+
+    AudioFile = open("./tmp/audio1", O_WRONLY | O_CREAT, 0644);
+    AlawFile = open("./tmp/test.pcma", O_WRONLY | O_CREAT, 0644);
+    H264File = open("./tmp/test.h264", O_WRONLY | O_CREAT, 0644);
     //mp4v2初始化
     mp4v2 = (MP4_INFORMATION *)malloc(sizeof(MP4_INFORMATION));
-    mp4v2->handle = MP4Create( argv[2], 0 );
-    if ( mp4v2->handle == MP4_INVALID_FILE_HANDLE ) {
+    mp4v2->handle = MP4Create(argv[2], 0);
+    if (mp4v2->handle == MP4_INVALID_FILE_HANDLE) {
 		printf( "ERROR:Create mp4 handle fialed\n" );
 		return -1;
     }
@@ -278,61 +275,58 @@ int main(int argc, char **argv)
     
     //faac初始化
     faac = (FAAC_INFORMATION *)malloc(sizeof(FAAC_INFORMATION));
-    faac->SampleRate = 8000;
-    faac->Channels   = 1;
-    faac->PCMBitSize = 16;
-    faac->handle     = faacEncOpen( faac->SampleRate, faac->Channels, &faac->InputSamples, &faac->MaxOutputBytes );
+    faac->SampleRate    = 8000;
+    faac->Channels      = 1;
+    faac->PCMBitSize    = 16;
+    faac->handle        = faacEncOpen(faac->SampleRate,
+                                      faac->Channels,
+                                      &faac->InputSamples,
+                                      &faac->MaxOutputBytes);
     faac->PCMBufferSize = faac->InputSamples * faac->PCMBitSize / 8;
     faac->PCMBuffer     = (short int*)malloc(faac->PCMBufferSize);
     //faac编码器配置
     faacEncConfigurationPtr pConfiguration;
-    pConfiguration              = faacEncGetCurrentConfiguration( faac->handle );
+    pConfiguration              = faacEncGetCurrentConfiguration(faac->handle);
     pConfiguration->inputFormat = FAAC_INPUT_16BIT;
     faacEncSetConfiguration( faac->handle, pConfiguration );
-    
-    
-    
+
     CMS_Parser *cms = new CMS_Parser(1024 * 1024);
     cms->set_callback(callback, NULL);
     char buf[4096];
     while (int len = read(CmsFile, buf, sizeof(buf))) {
-        if(len > 0){
+        if (len > 0) {
             cms->parse(buf, len);
         } else {
-           
             break;
         }
-
     }
 
     //判断是否还有数据未载入
     if( mp4v2->VideoSize > 0) {
-        printf("%d\n", mp4v2->VideoSize);
-        Write_Mp4(VideoData, mp4v2->VideoSize);
+        Write_Video(VideoBuf, mp4v2->VideoSize);
     }
     if ( faac->pcm_ptr > 0 ) {
-        printf("%d\n", faac->pcm_ptr);
         unsigned char AACBuffer[faac->MaxOutputBytes];
-        int nRet = faacEncEncode( faac->handle,
-                                  (int*) faac->PCMBuffer,
-                                  faac->pcm_ptr,
-                                  AACBuffer,
-                                  faac->MaxOutputBytes );
+        int ret = faacEncEncode(faac->handle,
+                                (int*) faac->PCMBuffer,
+                                faac->pcm_ptr,
+                                AACBuffer,
+                                faac->MaxOutputBytes);
         
-        MP4WriteSample( mp4v2->handle,
-                        mp4v2->AudioId,
-                        AACBuffer,
-                        nRet,
-                        MP4_INVALID_DURATION,
-                        0,
-                        1 );
+        MP4WriteSample(mp4v2->handle,
+                       mp4v2->AudioId,
+                       AACBuffer,
+                       ret,
+                       MP4_INVALID_DURATION,
+                       0,
+                       1);
         
     }
     
     MP4Close(mp4v2->handle, 0);
-    free(VideoData);
+    free(VideoBuf);
     free(faac->PCMBuffer);
-    //free(pbPCMBuffer);
     faacEncClose(faac->handle);
+    close(AudioFile);
     return 0;
 }

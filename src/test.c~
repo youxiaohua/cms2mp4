@@ -1,0 +1,13 @@
+#include <stdio.h>
+
+
+
+struct data{
+    uint32_t  bit:24
+    
+}
+
+int main(){
+    
+    
+}

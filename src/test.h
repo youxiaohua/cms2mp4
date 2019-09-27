@@ -42,7 +42,7 @@ typedef struct{
     int vedio_rate;
     int timeScale;
     int audio_rate;
-}header
+}header;
 MP4FileHandle handle;
 bool first = true;
 int data_length = 0;

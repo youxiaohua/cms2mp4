@@ -201,17 +201,19 @@ typedef struct box_mp4a{//音频解码信息
 
 
 typedef struct box_avcC{//在avc1里面, 视频的解码信息里面有sps pps等信息
-    uint8_t configurationVersion;      //版本号
-    uint8_t AVCProFileIndication;      //sps[1]
-    uint8_t profile_compatibility;     //sps[2]
-    uint8_t AVCLevelIndication;        //sps[3]
-    uint8_t reserved1 : 6;             //保留字段
-    uint8_t lengthSizeMinusOne : 2;    //非常重要 NALU 的长度-1  计算方法是 1 + (lengthSizeMinusOne & 3)，实际计算结果一直是4
-    uint8_t reserved2 : 3;
-    uint8_t sps_count : 5;             //sps个数
-    uint8_t *sps;                      //sps sieze + sps
-    uint8_t pps_count;                 //pps个数
-    uint8_t *pps;                      //pps size + pps
+    uint8_t  configurationVersion;      //版本号
+    uint8_t  AVCProFileIndication;      //sps[1]
+    uint8_t  profile_compatibility;     //sps[2]
+    uint8_t  AVCLevelIndication;        //sps[3]
+    uint8_t  reserved1 : 6;             //保留字段
+    uint8_t  lengthSizeMinusOne : 2;    //非常重要 NALU 的长度-1  计算方法是 1 + (lengthSizeMinusOne & 3)，实际计算结果一直是4
+    uint8_t  reserved2 : 3;
+    uint8_t  sps_count : 5;             //sps个数
+    uint16_t sps_size;
+    uint8_t  *sps;                      //sps 
+    uint8_t  pps_count;                 //pps个数
+    uint16_t pps_size;
+    uint8_t  *pps;                      //pps
 }BOX_AVCC;
 
 
@@ -222,7 +224,7 @@ typedef struct box_stts_entry{
     uint32_t sample_delta;
 }STTS_ENTRY;
     
-typedef struct box_stts{//时间戳和sample映射表
+typedef struct box_stts{//时间间隔和sample数量
     BOX         header;
     int         entry_count;          
     STTS_ENTRY  *entry;
@@ -273,10 +275,20 @@ typedef struct box_stco64{//当32位不够存放chunk偏移量时使用
 
 #pragma pack(pop)
 
+typedef enum{
+    CMS_FILE_HEADER = 0,
+    CMS_BOUNDARY,
+    CMS_DATA_HEADER,
+}CMS_STATE;
+typedef enum{
+    UNKNOW = -1,
+    CMS_VEDIO = 0,
+    CMS_AUDIO,
+}CMS_DATA_TYPE;
 
 int cms2mp4(FILE *cmsFile, char *mp4Name);
 int write_ftyp(FILE *mp4File);
-
+int write_mdat(FILE *cmsFile, FILE *mp4File);
 
 
 

@@ -1,6 +1,33 @@
 #include "2MP4.h"
 
 
+
+void add_delta( uint32_t delta, STTS_ENTRY *stts_entry, BOX_STTS *stts ) {
+    if( delta == 0 ){ return; }
+    delta = sw32( delta );
+    stts->entry_count = sw32( stts->entry_count ); //先转换成小端序  用完再转回大端序
+    if( stts->entry_count == 0 ) {
+        stts_entry->sample_count = sw32( 1 );
+        stts_entry->sample_delta = delta;
+        return;
+    }
+    int i, find = 0;
+    
+    for( i = 0; i < stts->entry_count; i++ ) {
+        if( stts_entry[i].sample_delta == delta){
+            stts_entry[i].sample_count = stts_entry->sample_count + sw32( 1 );
+            find = 1;
+        }
+    }
+    if( find == 0 ) {
+        stts->entry_count = stts->entry_count +  1 ;
+        stts_entry = (STTS_ENTRY *)realloc(stts_entry, sizeof(STTS_ENTRY) * stts->entry_count);
+        stts_entry[stts->entry_count].sample_count = sw32( 1 );
+        stts_entry[stts->entry_count].sample_delta = delta;
+    }
+    stts->entry_count = sw32( stts->entry_count );
+}
+
 /* mp4文件中的box是网络字节序 写入数据的时候需要先转换字节序 */
 int cms2mp4(FILE *cmsFile, char *mp4Name){
     //一级box
@@ -24,6 +51,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     //六级 在stbl下
     BOX_STSD stsd;
     BOX_STTS stts;
+    memset(&stts, 0, sizeof(BOX_STTS));
     BOX_STSS stss;
     BOX_STSC stsc;
     BOX_STSZ stsz;
@@ -42,16 +70,16 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     memset( &ftyp, 0, sizeof( ftyp ) );
     ftyp.header.boxSize = sw32( sizeof( ftyp ) );
     strncpy( (char *)&ftyp.header.boxType, BOX_TYPE_FTYP, 4 );
-    FTYP_BRANDS isom = { "isom" };
-    FTYP_BRANDS iso2 = { "iso2" };
-    FTYP_BRANDS avc1 = { "avc1" };
-    FTYP_BRANDS mp41 = { "mp41" };
+    FTYP_BRANDS f_isom = { "isom" };
+    FTYP_BRANDS f_iso2 = { "iso2" };
+    FTYP_BRANDS f_avc1 = { "avc1" };
+    FTYP_BRANDS f_mp41 = { "mp41" };
     ftyp.minor_version         = sw32( 512 );
-    ftyp.major_brand           = isom;
-    ftyp.compatible_brands[0]  = isom;
-    ftyp.compatible_brands[1]  = iso2;
-    ftyp.compatible_brands[2]  = avc1;
-    ftyp.compatible_brands[3]  = mp41;
+    ftyp.major_brand           = f_isom;
+    ftyp.compatible_brands[0]  = f_isom;
+    ftyp.compatible_brands[1]  = f_iso2;
+    ftyp.compatible_brands[2]  = f_avc1;
+    ftyp.compatible_brands[3]  = f_mp41;
     fwrite(&ftyp, sizeof(ftyp), 1, mp4File);
 
 //写入mdat
@@ -71,10 +99,11 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     uint32_t   *chunk_offset  = (uint32_t *)calloc(1, sizeof(uint32_t));
     
     
-//--------------------------------
+/*/--------------------------------
     uint8_t flag             = 0;
     CMS_STATE state          = CMS_FILE_HEADER;
     CMS_DATA_TYPE data_state = UNKNOW;
+    int  last = 0, now = 0;  
     char ch;   
     while ( !feof( fp ) ) {
         ch = fgetc( fp );       
@@ -111,14 +140,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                             flag = flag | CMS_FLAG_FORMAT_FOUND;
                         } else if ( strcmp( key, "track" ) == 0) {
                             flag = flag | CMS_FLAG_TRACK_FOUND;
-                            char *trak1 = strsep(&value, ";");
-                            if(trak1 != NULL){
-                                char *
-                                while(1) {
-                                    
-                                }
-                            }
-                            
+                            get_attribute(value, &tkhd);
                         }
                     }
                     
@@ -146,7 +168,6 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
             } else {
                 if( ch == '\n' );
                 {
-                    
                     fseek( fp,-2,SEEK_CUR );
                     break;
                 }
@@ -184,12 +205,16 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                         } else if (strcmp(value, "a") == 0) {
                             data_state = CMS_AUDIO;
                         } else if (strcmp(value, "j") == 0) {
-                        
+                            
                         }
                     } else if (strcmp(key, "ts") == 0) {
-                     
+                        last = now;
+                        now  = strtol(value, NULL, 10);
+                        uint32_t delta = now - last;
+                        add_time(delta, stts_entry, &stts);
                     } else if (strcmp(key, "l") == 0) {
                         data_length = strtol(value, NULL, 10);
+                        
                     } else if (strcmp(key, "t") == 0) {
 
                     }
@@ -211,21 +236,33 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
             
         }
     }
-
-
-
-
-
     
 
-//--------------------------------
+/*/
     return 0;
+}
+ 
+int get_attribute(char *value, BOX_TKHD *tkhd){
+    char *trak1 = value;
+    char *trak  = strsep(&value, ";");
+    if(trak != NULL){
+        trak1 = trak;
+    }
+    trak1 = strtok(trak1,",");
+    while(trak1 != NULL) {
+        if(strstr(trak1, "width") != NULL) {
+            tkhd->width = sw32( (uint32_t)atoi( &trak1[6] ) );
+            printf("width : %d", atoi( &trak1[6] ));
+        }
+        if(strstr(trak1, "height") != NULL){
+            tkhd->height = sw32( (uint32_t)atoi( &trak1[7] ) );
+            printf("height : %d", atoi( &trak1[7] ));
+        }
+        trak1 = strtok(NULL, ",");
+            }
 }
 int main(){
     cms2mp4(NULL, "123.mp4");
-    int a = 1;
-    printf("%d\n", ((char *)&a)[3]);
-    int b = sw32(a);
-    printf("%d\n", ((char *)&b)[3]);
+
     return 0;
 }

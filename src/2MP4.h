@@ -2,6 +2,7 @@
 #define TMP4_H
 
 #include<stdio.h>
+#include<stdlib.h>
 #include<stdint.h>
 #include<string.h>
 
@@ -9,6 +10,7 @@
                    ( ( (uint32_t)(x) & 0x00ff0000 ) >> 8  ) | \
                    ( ( (uint32_t)(x) & 0x0000ff00 ) << 8  ) | \
                    ( ( (uint32_t)(x) & 0x000000ff ) << 24 ) )
+
 
 #define sw16(x)  ( ( ( (uint16_t)(x) & 0xff00 ) >> 8 ) | \
                    ( ( (uint16_t)(x) & 0x00ff ) << 8 ) )
@@ -219,7 +221,7 @@ typedef struct box_avcC{//在avc1里面, 视频的解码信息里面有sps pps�
 
 //stts
 
-typedef struct box_stts_entry{
+typedef struct stts_entry{
     uint32_t sample_count;
     uint32_t sample_delta;
 }STTS_ENTRY;
@@ -227,7 +229,7 @@ typedef struct box_stts_entry{
 typedef struct box_stts{//时间间隔和sample数量
     BOX         header;
     int         entry_count;          
-    STTS_ENTRY  *entry;
+    //STTS_ENTRY  *entry;
     
 }BOX_STTS;
 
@@ -237,7 +239,7 @@ typedef struct box_stsz{//包含sample的数量和每个sample的字节大小
     FULL_BOX    full_box;
     uint32_t    sample_size;          //全部sample的数据，如果所有的sample有相同的长度,这个字段就是这个值,否则为0          
     uint32_t    sample_count;        
-    uint32_t    *sample_sizes;
+    //uint32_t    *sample_sizes;
 }BOX_STSZ;
 
 typedef struct stsc_entry{
@@ -250,27 +252,27 @@ typedef struct box_stsc{//media中的sample被分组成chunk,包含sample-chunk�
     BOX        header;
     FULL_BOX   full_box;
     uint32_t   entry_count;
-    STSC_ENTRY *entry;
+    //STSC_ENTRY *entry;
 }BOX_STSC;
 
 typedef struct box_stss{//包含media中的关键帧的sample表,此表不存在便是每一个sample都是关键帧
     BOX        header;
     FULL_BOX   full_box;
-    uint32_t   *sample_number;            //sample关键帧的序号
+    //uint32_t   *sample_number;            //sample关键帧的序号
 }BOX_STSS;
 
 typedef struct box_stco{//储存每个chunk在文件的位置
     BOX        header;
     FULL_BOX   full_box;
     uint32_t   entry_count;
-    uint32_t   *chunk_offset;          //chunk在文件中的偏移量
+    //uint32_t   *chunk_offset;          //chunk在文件中的偏移量
 }BOX_STCO;
 
 typedef struct box_stco64{//当32位不够存放chunk偏移量时使用
     BOX        header;
     FULL_BOX   full_box;
     uint32_t   entry_count;
-    uint64_t   *chunk_offset;          //chunk在文件中的偏移量
+    //uint64_t   *chunk_offset;          //chunk在文件中的偏移量
 }BOX_STCO64;
 
 #pragma pack(pop)
@@ -289,23 +291,11 @@ typedef enum{
 int cms2mp4(FILE *cmsFile, char *mp4Name);
 int write_ftyp(FILE *mp4File);
 int write_mdat(FILE *cmsFile, FILE *mp4File);
-
-
+int get_attribute(char *value, BOX_TKHD *tkhd);
+void add_delta(uint32_t delta, STTS_ENTRY *stts_entry, BOX_STTS *stts);
 
 
 
 
 #endif
-/*
-char *trak1 = strtok(trak1,",");
-                            while(trak1 != NULL) {
-                                if(strstr(trak1, "width") != NULL) {
-                                    tkhd.width = sw32( atoi(trak1[6]) );
-                                    printf();
-                                }
-                                if(strstr(trak1, "height") != NULL){
-                                    tkhd.height = sw32( atoi(trak1[7]) );
-                                }
-                                trak1 = strtol(NULL, ",")
-                                }
- */
+

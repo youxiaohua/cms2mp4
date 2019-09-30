@@ -296,3 +296,16 @@ int write_mdat(FILE *cmsFile, FILE *mp4File);
 
 
 #endif
+/*
+char *trak1 = strtok(trak1,",");
+                            while(trak1 != NULL) {
+                                if(strstr(trak1, "width") != NULL) {
+                                    tkhd.width = sw32( atoi(trak1[6]) );
+                                    printf();
+                                }
+                                if(strstr(trak1, "height") != NULL){
+                                    tkhd.height = sw32( atoi(trak1[7]) );
+                                }
+                                trak1 = strtol(NULL, ",")
+                                }
+ */

@@ -15,6 +15,9 @@
 #define sw16(x)  ( ( ( (uint16_t)(x) & 0xff00 ) >> 8 ) | \
                    ( ( (uint16_t)(x) & 0x00ff ) << 8 ) )
 
+#define sw24(x)  ( ( ( (uint16_t)(x) & 0xff0000 ) >> 16 ) | \
+                   ( ( (uint16_t)(x) & 0x0000ff ) << 16 ) )
+
 #define BOX_TYPE_FTYP "ftyp"
 #define BOX_TYPE_MOOV "moov"
 #define BOX_TYPE_MVHD "mvhd"

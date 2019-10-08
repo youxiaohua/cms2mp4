@@ -2,6 +2,37 @@
 
 
 
+//读取到track信息时 获取视频的信息
+int get_attribute(char *value, BOX_TKHD *tkhd){
+    char *trak1 = value;
+    char *trak  = strsep(&value, ";");
+    if(trak != NULL) {
+        trak1 = trak;
+    }
+    trak1 = strtok(trak1,",");
+    while(trak1 != NULL) {
+        if(strstr(trak1, "width") != NULL) {
+            tkhd->width = sw32( (uint32_t)atoi( &trak1[6] ) );
+            printf("width : %d", atoi( &trak1[6] ));
+        }
+        if(strstr(trak1, "height") != NULL) {
+            tkhd->height = sw32( (uint32_t)atoi( &trak1[7] ) );
+            printf("height : %d", atoi( &trak1[7] ));
+        }
+        trak1 = strtok(NULL, ",");
+    }
+}
+uint32_t add_sample_size(uint32_t sample_count, uint32_t *sample_sizes, int DataSize) {
+    if(sample_count == 0) {
+        sample_sizes[0] = sw32(DataSize);
+        return sw32(1);
+    }
+    sample_count = sw32(sample_count) + 1;
+    sample_sizes = realloc(sample_sizes, sizeof(uint32_t) * sample_count);
+    sample_sizes[sample_count - 1] = strtol(value, NULL, 10);
+    return sw32(sample_count);
+}
+//读取到时间间隔时写入 stts中
 void add_delta( uint32_t delta, STTS_ENTRY *stts_entry, BOX_STTS *stts ) {
     if( delta == 0 ){ return; }
     delta = sw32( delta );
@@ -32,34 +63,54 @@ void add_delta( uint32_t delta, STTS_ENTRY *stts_entry, BOX_STTS *stts ) {
 int cms2mp4(FILE *cmsFile, char *mp4Name){
     //一级box
     BOX_FTYP ftyp;
+    memset(&stts, 0, sizeof(BOX_STTS));
     BOX      mdat;
+    memset(&mdat, 0, sizeof(BOX));
     BOX      moov;
+    memset(&moov, 0, sizeof(BOX));
     //二级 在moov下
     BOX_MVHD mvhd;
+    memset(&mvhd, 0, sizeof(BOX_MVHD));
     BOX      trak;
+    memset(&trak, 0, sizeof(BOX));
     //三级 在trak下
     BOX_TKHD tkhd;
+    memset(&tkhd, 0, sizeof(BOX_TKHD));
     BOX      mdia;
+    memset(&mdia, 0, sizeof(BOX));
     //四级 在mdia下
     BOX_MDHD mdhd;
+    memset(&mdhd, 0, sizeof(BOX_MDHD));
     BOX_HDLR hdlr;
+    memset(&hdlr, 0, sizeof(BOX_HDLR));
     BOX      minf;
+    memset(&minf, 0, sizeof(BOX));
     //五级 在minf下
     BOX_VMHD vmhd;
+    memset(&vmhd, 0, sizeof(BOX_VMHD));
     BOX      dinf;
+    memset(&dinf, 0, sizeof(BOX));
     BOX      stbl;
+    memset(&stbl, 0, sizeof(BOX));
     //六级 在stbl下
     BOX_STSD stsd;
+    memset(&stsd, 0, sizeof(BOX_STSD));
     BOX_STTS stts;
     memset(&stts, 0, sizeof(BOX_STTS));
     BOX_STSS stss;
+    memset(&stss, 0, sizeof(BOX_STSS));
     BOX_STSC stsc;
+    memset(&stsc, 0, sizeof(BOX_STSC));
     BOX_STSZ stsz;
+    memset(&stsz, 0, sizeof(BOX_STSZ));
     BOX_STCO stco;
+    memset(&stco, 0, sizeof(BOX_STCO));
     //七级 在stsd下
     BOX_AVC1 avc1;
+    memset(&avc1, 0, sizeof(BOX_AVC1));
     //八级 在avc1下
     BOX_AVCC avcC;
+    memset(&avcC, 0, sizeof(BOX_AVCC));
     
 
     
@@ -99,14 +150,15 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     uint32_t   *chunk_offset  = (uint32_t *)calloc(1, sizeof(uint32_t));
     
     
-/*/--------------------------------
+//--------------------------------
     uint8_t flag             = 0;
     CMS_STATE state          = CMS_FILE_HEADER;
     CMS_DATA_TYPE data_state = UNKNOW;
+    int DataSize = 0;
     int  last = 0, now = 0;  
     char ch;   
-    while ( !feof( fp ) ) {
-        ch = fgetc( fp );       
+    while ( !feof( cmsFile ) ) {
+        ch = fgetc( cmsFile );       
         switch ( state ) {
         case CMS_FILE_HEADER:
             if (ch == '\r') {
@@ -168,7 +220,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
             } else {
                 if( ch == '\n' );
                 {
-                    fseek( fp,-2,SEEK_CUR );
+                    fseek(cmsFile, -2, SEEK_CUR);
                     break;
                 }
                 printf("boundary error\n");
@@ -181,10 +233,12 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                 if ( line_buf_ptr == 0 ) {       
                     switch( data_state ) {
                     case CMS_VEDIO:
-                        Write_Mp4(fp, &head, handle, data_length);
+                        fseek(cmsFile, DataSize * -1, SEEK_CUR);
+                        //Write_Mp4(fp, &head, handle, data_length);
                         state = CMS_BOUNDARY;
                         break;
                     case CMS_AUDIO:{
+                        fseek(cmsFile, 480, SEEK_CUR);
                         state = CMS_BOUNDARY;
                         break;
                     }
@@ -205,7 +259,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                         } else if (strcmp(value, "a") == 0) {
                             data_state = CMS_AUDIO;
                         } else if (strcmp(value, "j") == 0) {
-                            
+                            //
                         }
                     } else if (strcmp(key, "ts") == 0) {
                         last = now;
@@ -213,7 +267,11 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                         uint32_t delta = now - last;
                         add_time(delta, stts_entry, &stts);
                     } else if (strcmp(key, "l") == 0) {
-                        data_length = strtol(value, NULL, 10);
+                        if(data_state == CMS_VEDIO) {
+                            DataSize = strtol(value, NULL, 10);
+                            stsz.sample_count = add_sample_size(stsz.sample_count, sample_sizes, DataSize);
+                            printf("sample_cpunt: %d  sample_sizes[%d]: %d", stsz.sample_count, stsz.sample_count - 1, sample_sizes[stsz.sample_count - 1]);
+                        }
                         
                     } else if (strcmp(key, "t") == 0) {
 
@@ -238,29 +296,11 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     }
     
 
-/*/
+//
     return 0;
 }
  
-int get_attribute(char *value, BOX_TKHD *tkhd){
-    char *trak1 = value;
-    char *trak  = strsep(&value, ";");
-    if(trak != NULL){
-        trak1 = trak;
-    }
-    trak1 = strtok(trak1,",");
-    while(trak1 != NULL) {
-        if(strstr(trak1, "width") != NULL) {
-            tkhd->width = sw32( (uint32_t)atoi( &trak1[6] ) );
-            printf("width : %d", atoi( &trak1[6] ));
-        }
-        if(strstr(trak1, "height") != NULL){
-            tkhd->height = sw32( (uint32_t)atoi( &trak1[7] ) );
-            printf("height : %d", atoi( &trak1[7] ));
-        }
-        trak1 = strtok(NULL, ",");
-            }
-}
+
 int main(){
     cms2mp4(NULL, "123.mp4");
 

@@ -19,6 +19,7 @@
                    ( ( (uint16_t)(x) & 0x0000ff ) << 16 ) )
 
 #define BOX_TYPE_FTYP "ftyp"
+#define BOX_TYPE_MDAT "mdat"
 #define BOX_TYPE_MOOV "moov"
 #define BOX_TYPE_MVHD "mvhd"
 #define BOX_TYPE_TRAK "trak"
@@ -41,10 +42,17 @@
 #define BOX_TYPE_UDTA "udta"
 
 
+#define CMS_FLAG_TRACK_FOUND  0x01
+#define CMS_FLAG_FORMAT_FOUND 0x02
+#define DATA_BUF_SIZE         1024 * 1024
 
-#define MAX_BOX_TYPE_LEN 4
-#define MAX_FTYP_BRANDS_LEN 4
-#define MAX_FTYP_BRANDS_NUM 4
+//用在写入sample时 区分 一帧数据读取完毕 还是文件结束
+#define FILE_END              1
+#define DATA_END              2
+
+#define MAX_BOX_TYPE_LEN      4
+#define MAX_FTYP_BRANDS_LEN   4
+#define MAX_FTYP_BRANDS_NUM   4
 
 #pragma pack(push)
 #pragma pack(1)
@@ -285,18 +293,23 @@ typedef enum{
     CMS_BOUNDARY,
     CMS_DATA_HEADER,
 }CMS_STATE;
+
 typedef enum{
     UNKNOW = -1,
-    CMS_VEDIO = 0,
+    CMS_VEDIO_I = 0,
+    CMS_VEDIO_P,
     CMS_AUDIO,
 }CMS_DATA_TYPE;
+
+
+bool FristWirteSample = true;
 
 int cms2mp4(FILE *cmsFile, char *mp4Name);
 int write_ftyp(FILE *mp4File);
 int write_mdat(FILE *cmsFile, FILE *mp4File);
-int get_attribute(char *value, BOX_TKHD *tkhd);
+int get_information(char *value, BOX_TKHD *tkhd);
 void add_delta(uint32_t delta, STTS_ENTRY *stts_entry, BOX_STTS *stts);
-
+uint32_t add_sample_size(uint32_t sample_count, uint32_t **sample_sizes, int DataSize);
 
 
 

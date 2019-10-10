@@ -303,7 +303,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     int line_buf_ptr        = 0;
     int boundary_ptr        = 0;
     int boundary_size       = 0;
-    CMS_DATA_TYPE DataState = UNKNOW;
+    CMS_DATA_TYPE DataType  = UNKNOW;
     
     while ( !feof( cmsFile ) ) {
         ch = fgetc( cmsFile );       
@@ -381,18 +381,15 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                 if ( line_buf_ptr == 0 ) {       
                     switch( data_state ) {
                     case CMS_VEDIO:
-                        /*printf("%d \n", DataSize);
-                        while(DataSize > 0) {
-                            ch = fgetc( cmsFile );
-                            DataSize = DataSize - 1;
-                        }
-                        Write_Mp4(fp, &head, handle, data_length);
-                        */
                         int offset = write_sample(cmsFile, mp4File, DataSize);
                         if(offset < 0){
                             return -1;
                         } else {
-                            if(){
+                            if(DataType == CMS_VEDIO_I){
+                                s
+                                great_chunk();
+                            }else {
+                                
                             }
                         }
                         state = CMS_BOUNDARY;
@@ -413,19 +410,21 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                     char *value = p;
                     if ( strcmp(key, "f" ) == 0) {
                         if (strcmp(value, "i") == 0) {
-                            DataState = CMS_VEDIO_I;
+                            DataType = CMS_VEDIO_I;
                             if(sample_i == 0) {
                                 sample_number[0] = sw32(number);
                                 sample_i++;
                             } else {
-                                
+                                sample_i++;
+                                sample_number = (uint32_t *)realloc(sample_number, sizeof(uint32_t) * sample_i);
+                                sample_number[sample_number - 1] = sw32(number);
                             }
                             number++;
                         } else if (strcmp(value, "p") == 0) {
-                            DataState = CMS_VEDIO_P;
+                            DataType = CMS_VEDIO_P;
                             number++;
                         } else if (strcmp(value, "a") == 0) {
-                            DataState = CMS_AUDIO;
+                            DataType = CMS_AUDIO;
                         } else if (strcmp(value, "j") == 0) {
                         }
                     } else if (strcmp(key, "ts") == 0) {

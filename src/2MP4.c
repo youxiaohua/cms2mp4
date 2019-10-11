@@ -24,7 +24,6 @@ int get_information(char *value, BOX_TKHD *tkhd){
             trak1 = strtok(NULL, ",");
         }
     }
-    printf("get_attribute\n");
 }
 uint32_t add_sample_size(uint32_t sample_count, uint32_t **sample_sizes, int DataSize) {
     if(sample_count == 0) {
@@ -36,29 +35,30 @@ uint32_t add_sample_size(uint32_t sample_count, uint32_t **sample_sizes, int Dat
     (*sample_sizes)[sample_count - 1] = sw32(DataSize);
     return sw32(sample_count);
 }
+
 //读取到时间间隔时写入 stts中
-void add_delta( uint32_t delta, STTS_ENTRY *stts_entry, BOX_STTS *stts ) {
+void add_delta( uint32_t delta, STTS_ENTRY **stts_entry, BOX_STTS *stts ) {
     if( delta == 0 ){ return; }
     delta = sw32( delta );
     stts->entry_count = sw32( stts->entry_count ); //先转换成小端序  用完再转回大端序
     if( stts->entry_count == 0 ) {
-        stts_entry->sample_count = sw32( 1 );
-        stts_entry->sample_delta = delta;
+        (*stts_entry)->sample_count = sw32( 1 );
+        (*stts_entry)->sample_delta = sw32(delta);
         return;
     }
     int i, find = 0;
     
     for( i = 0; i < stts->entry_count; i++ ) {
-        if( stts_entry[i].sample_delta == delta){
-            stts_entry[i].sample_count = stts_entry->sample_count + sw32( 1 );
+        if( (*stts_entry)[i].sample_delta == delta){
+            (*stts_entry)[i].sample_count = (*stts_entry)[i].sample_count + sw32( 1 );
             find = 1;
         }
     }
     if( find == 0 ) {
         stts->entry_count = stts->entry_count +  1 ;
-        stts_entry = (STTS_ENTRY *)realloc(stts_entry, sizeof(STTS_ENTRY) * stts->entry_count);
-        stts_entry[stts->entry_count].sample_count = sw32( 1 );
-        stts_entry[stts->entry_count].sample_delta = delta;
+        *stts_entry = (STTS_ENTRY *)realloc(stts_entry, sizeof(STTS_ENTRY) * stts->entry_count);
+        (*stts_entry)[stts->entry_count].sample_count = sw32( 1 );
+        (*stts_entry)[stts->entry_count].sample_delta = sw32(delta);
     }
     stts->entry_count = sw32( stts->entry_count );
 }
@@ -101,11 +101,11 @@ int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
     unsigned char *buf = malloc(DATA_BUF_SIZE);
     unsigned char *nalu = NULL;
     unsigned char naluType;
-    unsigned int  offset = ftell(csmFile);  //保存当前数据的吸入位置
+    unsigned int  offset = ftell(cmsFile);  //保存当前数据的吸入位置
     int len = 0;
     int state = 0;
     while( state == 0 ) {
-        len = get_nalu(csmFile, buf, DataSize);
+        len = get_nalu(cmsFile, buf, DataSize, &state);
         if(len < 0) { break; }
         nalu = buf + 4;
         naluType = nalu[0] & 0x1f;
@@ -118,7 +118,8 @@ int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
                 avcC->AVCLevelIndication    = nalu[3];
                 avcC->lengthSizeMinusOne    = 3;
                 avcC->sps_count             = 1;
-                avcC->sps_size              = len - 4;
+                uint16_t sps_size               = len - 4;
+                avcC->sps_size              = sw16(sps_size);
                 avcC->sps                   = strdup(nalu);
                 
             }
@@ -132,7 +133,8 @@ int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
             if(FristWirteSample) {
                 //收集pps信息
                 avcC->pps_count             = 1;
-                avcC->pps_size              = len - 4;
+                uint16_t pps_size           = len - 4;
+                avcC->pps_size              = sw16(pps_size);
                 avcC->pps                   = strdup(nalu);
                 FristWirteSample = false; 
             }
@@ -156,6 +158,37 @@ int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
 
     return offset;
 }
+
+
+
+int create_chunk(BOX_STSC *stsc, STSC_ENTRY **stsc_entry) {
+    if(stsc->entry_count == 0) {
+        (*stsc_entry)->first_chunk               = sw32(1);
+        (*stsc_entry)->sample_per_chunk          = sw32(1);
+        (*stsc_entry)->sample_description_index  = sw32(1);
+        stsc->entry_count                        = sw32(1);
+    }else{
+        uint32_t count = sw32(stsc->entry_count);
+        count++;
+        *stsc_entry = (STSC_ENTRY *)realloc(*stsc_entry, sizeof(STSC_ENTRY) * count);
+        (*stsc_entry)[count -1].first_chunk               = sw32(count);
+        (*stsc_entry)[count -1].sample_per_chunk          = sw32(1);
+        (*stsc_entry)[count -1].sample_description_index  = sw32(1);
+    }
+
+}
+int add_chunk_offset(BOX_STCO *stco,  uint32_t **chunk_offset, uint32_t offset) {
+    if(stco->entry_count == 0){
+        stco->entry_count   = sw32(1);
+        (*chunk_offset)[0]  = sw32(offset);
+    }else{
+        uint32_t count = sw32(stco->entry_count);
+        count++;
+        //*chunk_offset  = (uint32_t *)realloc(*)
+        
+    }
+
+}
 /* mp4文件中的box是网络字节序 写入数据的时候需要先转换字节序 */
 int cms2mp4(FILE *cmsFile, char *mp4Name){
     //一级box
@@ -164,90 +197,90 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 
     BOX      mdat;
     memset(&mdat, 0, sizeof(BOX));
-    strncpy( (char *)&mdat.header.boxType, BOX_TYPE_MDAT, 4 );
+    strncpy( (char *)&(mdat.boxType), BOX_TYPE_MDAT, 4 );
 
     BOX      moov;
     memset(&moov, 0, sizeof(BOX));
-    strncpy( (char *)&moov.header.boxType, BOX_TYPE_MOOV, 4 );
+    strncpy( (char *)&(moov.boxType), BOX_TYPE_MOOV, 4 );
 
     //二级 在moov下
     BOX_MVHD mvhd;
     memset(&mvhd, 0, sizeof(BOX_MVHD));
-    strncpy( (char *)&mvhd.header.boxType, BOX_TYPE_MVHD, 4 );
+    strncpy( (char *)&(mvhd.header.boxType), BOX_TYPE_MVHD, 4 );
 
     BOX      trak;
     memset(&trak, 0, sizeof(BOX));
-    strncpy( (char *)&trak.header.boxType, BOX_TYPE_TRAK, 4 );
+    strncpy( (char *)&(trak.boxType), BOX_TYPE_TRAK, 4 );
 
     //三级 在trak下
     BOX_TKHD tkhd;
     memset(&tkhd, 0, sizeof(BOX_TKHD));
-    strncpy( (char *)&tkhd.header.boxType, BOX_TYPE_TKHD, 4 );
+    strncpy( (char *)&(tkhd.header.boxType), BOX_TYPE_TKHD, 4 );
 
     BOX      mdia;
     memset(&mdia, 0, sizeof(BOX));
-    strncpy( (char *)&mdia.header.boxType, BOX_TYPE_MDIA, 4 );
+    strncpy( (char *)&(mdia.boxType), BOX_TYPE_MDIA, 4 );
 
     //四级 在mdia下
     BOX_MDHD mdhd;
     memset(&mdhd, 0, sizeof(BOX_MDHD));
-    strncpy( (char *)&mdhd.header.boxType, BOX_TYPE_MDHD, 4 );
+    strncpy( (char *)&(mdhd.header.boxType), BOX_TYPE_MDHD, 4 );
 
     BOX_HDLR hdlr;
     memset(&hdlr, 0, sizeof(BOX_HDLR));
-    strncpy( (char *)&mdat.header.boxType, BOX_TYPE_MDAT, 4 );
+    strncpy( (char *)&(hdlr.header.boxType), BOX_TYPE_MDAT, 4 );
 
     BOX      minf;
     memset(&minf, 0, sizeof(BOX));
-    strncpy( (char *)&minf.header.boxType, BOX_TYPE_MINF, 4 );
+    strncpy( (char *)&(minf.boxType), BOX_TYPE_MINF, 4 );
 
     //五级 在minf下
     BOX_VMHD vmhd;
     memset(&vmhd, 0, sizeof(BOX_VMHD));
-    strncpy( (char *)&vmhd.header.boxType, BOX_TYPE_VMHD, 4 );
+    strncpy( (char *)&(vmhd.header.boxType), BOX_TYPE_VMHD, 4 );
 
     BOX      dinf;
     memset(&dinf, 0, sizeof(BOX));
-    strncpy( (char *)&dinf.header.boxType, BOX_TYPE_DINF, 4 );
+    strncpy( (char *)&(dinf.boxType), BOX_TYPE_DINF, 4 );
 
     BOX      stbl;
     memset(&stbl, 0, sizeof(BOX));
-    strncpy( (char *)&stbl.header.boxType, BOX_TYPE_STBL, 4 );
+    strncpy( (char *)&(stbl.boxType), BOX_TYPE_STBL, 4 );
 
     //六级 在stbl下
     BOX_STSD stsd;
     memset(&stsd, 0, sizeof(BOX_STSD));
-    strncpy( (char *)&stsd.header.boxType, BOX_TYPE_STSD, 4 );
+    strncpy( (char *)&(stsd.header.boxType), BOX_TYPE_STSD, 4 );
 
     BOX_STTS stts;
     memset(&stts, 0, sizeof(BOX_STTS));
-    strncpy( (char *)&stts.header.boxType, BOX_TYPE_STTS, 4 );
+    strncpy( (char *)&(stts.header.boxType), BOX_TYPE_STTS, 4 );
 
     BOX_STSS stss;
     memset(&stss, 0, sizeof(BOX_STSS));
-    strncpy( (char *)&stss.header.boxType, BOX_TYPE_STSS, 4 );
+    strncpy( (char *)&(stss.header.boxType), BOX_TYPE_STSS, 4 );
 
     BOX_STSC stsc;
     memset(&stsc, 0, sizeof(BOX_STSC));
-    strncpy( (char *)&stsc.header.boxType, BOX_TYPE_STSC, 4 );
+    strncpy( (char *)&(stsc.header.boxType), BOX_TYPE_STSC, 4 );
 
     BOX_STSZ stsz;
     memset(&stsz, 0, sizeof(BOX_STSZ));
-    strncpy( (char *)&stsz.header.boxType, BOX_TYPE_STSZ, 4 );
+    strncpy( (char *)&(stsz.header.boxType), BOX_TYPE_STSZ, 4 );
 
     BOX_STCO stco;
     memset(&stco, 0, sizeof(BOX_STCO));
-    strncpy( (char *)&stco.header.boxType, BOX_TYPE_STCO, 4 );
+    strncpy( (char *)&(stco.header.boxType), BOX_TYPE_STCO, 4 );
 
     //七级 在stsd下
     BOX_AVC1 avc1;
     memset(&avc1, 0, sizeof(BOX_AVC1));
-    strncpy( (char *)&avc1.header.boxType, BOX_TYPE_avc1, 4 );
+    strncpy( (char *)&(avc1.header.boxType), BOX_TYPE_AVC1, 4 );
 
     //八级 在avc1下
     BOX_AVCC avcC;
     memset(&avcC, 0, sizeof(BOX_AVCC));
-    strncpy( (char *)&avcC.header.boxType, BOX_TYPE_AVCC, 4 );
+    strncpy( (char *)&(avcC.header.boxType), BOX_TYPE_AVCC, 4 );
     
 
     
@@ -258,7 +291,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     }
     //写入mp4头部
     ftyp.header.boxSize = sw32( sizeof( ftyp ) );
-    strncpy( (char *)&ftyp.header.boxType, BOX_TYPE_FTYP, 4 );
+    strncpy( (char *)&(ftyp.header.boxType), BOX_TYPE_FTYP, 4 );
     FTYP_BRANDS f_isom = { "isom" };
     FTYP_BRANDS f_iso2 = { "iso2" };
     FTYP_BRANDS f_avc1 = { "avc1" };
@@ -296,6 +329,8 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 
     char ch;   
     char line_buf[1024];
+    int last = 0,now = 0;
+    uint32_t offset         = 0;
     int DataSize            = 0;
     uint8_t flag            = 0;
     char *boundary          = NULL;
@@ -379,16 +414,17 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
             if ( ch == '\r' ) {
             } else if ( ch == '\n' ) {
                 if ( line_buf_ptr == 0 ) {       
-                    switch( data_state ) {
-                    case CMS_VEDIO:
-                        int offset = write_sample(cmsFile, mp4File, DataSize);
+                    switch( DataType ) {
+                    case CMS_VEDIO_I:
+                    case CMS_VEDIO_P:
+                        offset = write_sample(cmsFile, mp4File, DataSize, &avcC);
                         if(offset < 0){
                             return -1;
                         } else {
                             if(DataType == CMS_VEDIO_I){
-                                s
-                                great_chunk();
-                            }else {
+                                create_chunk(&stsc, &stsc_entry);
+                                add_chunk_offset(&stco, &chunk_offset, offset);
+                            }else{
                                 
                             }
                         }
@@ -417,7 +453,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                             } else {
                                 sample_i++;
                                 sample_number = (uint32_t *)realloc(sample_number, sizeof(uint32_t) * sample_i);
-                                sample_number[sample_number - 1] = sw32(number);
+                                sample_number[sample_i - 1] = sw32(number);
                             }
                             number++;
                         } else if (strcmp(value, "p") == 0) {
@@ -428,12 +464,15 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                         } else if (strcmp(value, "j") == 0) {
                         }
                     } else if (strcmp(key, "ts") == 0) {
-                        last = now;
-                        now  = strtol(value, NULL, 10);
-                        uint32_t delta = now - last;
-                        add_delta(delta, stts_entry, &stts);
+                        if(DataType == CMS_VEDIO_I || DataType == CMS_VEDIO_I) {
+                            last = now;
+                            now  = strtol(value, NULL, 10);
+                            uint32_t delta = now - last;
+                            printf("delta : %d \n", delta);
+                            add_delta(delta, &stts_entry, &stts);
+                        }
                     } else if (strcmp(key, "l") == 0) {
-                        if(DataState == CMS_VEDIO_I || DataState == CMS_VEDIO_I) {
+                        if(DataType == CMS_VEDIO_I || DataType == CMS_VEDIO_I) {
                             DataSize = strtol(value, NULL, 10);
                             stsz.sample_count = add_sample_size(stsz.sample_count, &sample_sizes, DataSize);
                             int i = sw32(stsz.sample_count);
@@ -458,12 +497,12 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                 }
             }
             break;
-            
+        
         }
     }
     
     
-//
+//------------
     return 0;
 }
- 
+

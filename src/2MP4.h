@@ -5,7 +5,7 @@
 #include<stdlib.h>
 #include<stdint.h>
 #include<string.h>
-
+#include<stdbool.h>
 #define sw32(x)  ( ( ( (uint32_t)(x) & 0xff000000 ) >> 24 ) | \
                    ( ( (uint32_t)(x) & 0x00ff0000 ) >> 8  ) | \
                    ( ( (uint32_t)(x) & 0x0000ff00 ) << 8  ) | \
@@ -40,7 +40,8 @@
 #define BOX_TYPE_STSZ "stsz"
 #define BOX_TYPE_STCO "stco"
 #define BOX_TYPE_UDTA "udta"
-
+#define BOX_TYPE_AVC1 "avc1"
+#define BOX_TYPE_AVCC "avcC"
 
 #define CMS_FLAG_TRACK_FOUND  0x01
 #define CMS_FLAG_FORMAT_FOUND 0x02
@@ -58,12 +59,12 @@
 #pragma pack(1)
 typedef struct box{
     uint32_t boxSize;                      //如果为1 表示box的大小信息需要在largeBoxSize取得 一般只有mdat才会用到
-    uint8_t  boxType[MAX_BOX_TYPE_LEN];     //box的类型 4个字符
+    uint8_t  boxType[MAX_BOX_TYPE_LEN];    //box的类型 4个字符
 }BOX;
 
 typedef struct box_large{
     uint32_t boxSize;                      //如果为1 表示box的大小信息需要在largeBoxSize取得 
-    uint8_t  boxType[MAX_BOX_TYPE_LEN];     //box的类型 4个字符
+    uint8_t  boxType[MAX_BOX_TYPE_LEN];    //box的类型 4个字符
     uint64_t largeBoxSize;
 }BOX_LARGE;
 
@@ -214,6 +215,7 @@ typedef struct box_mp4a{//音频解码信息
 
 
 typedef struct box_avcC{//在avc1里面, 视频的解码信息里面有sps pps等信息
+    BOX      header;
     uint8_t  configurationVersion;      //版本号
     uint8_t  AVCProFileIndication;      //sps[1]
     uint8_t  profile_compatibility;     //sps[2]
@@ -254,8 +256,8 @@ typedef struct box_stsz{//包含sample的数量和每个sample的字节大小
 }BOX_STSZ;
 
 typedef struct stsc_entry{
-    uint32_t first_chunk;              //当前第一个chunk的
-    uint32_t samples_per_chunk;        //每个chunk拥有的sample 
+    uint32_t first_chunk;              //当前第一个chunk的序号
+    uint32_t sample_per_chunk;        //每个chunk拥有的sample 
     uint32_t sample_description_index; //采样描述索引  在stsd中找到描述信息
 }STSC_ENTRY;
 
@@ -305,13 +307,19 @@ typedef enum{
 bool FristWirteSample = true;
 
 int cms2mp4(FILE *cmsFile, char *mp4Name);
-int write_ftyp(FILE *mp4File);
-int write_mdat(FILE *cmsFile, FILE *mp4File);
+
 int get_information(char *value, BOX_TKHD *tkhd);
-void add_delta(uint32_t delta, STTS_ENTRY *stts_entry, BOX_STTS *stts);
+
+void add_delta(uint32_t delta, STTS_ENTRY **stts_entry, BOX_STTS *stts);
+
 uint32_t add_sample_size(uint32_t sample_count, uint32_t **sample_sizes, int DataSize);
 
+int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC);
 
+int get_nalu(FILE *cmsFile, char *buf, int DataSize, int *state);
 
+int create_chunk(BOX_STSC *stsc, STSC_ENTRY **stsc_entry);
+
+int add_chunk_offset(BOX_STCO *stco,  uint32_t **chunk_offset, uint32_t offset);
 #endif
 

@@ -4,7 +4,7 @@
 
 //读取到track信息时 获取视频的信息
 int get_information(char *value, BOX_TKHD *tkhd){
-   
+    // printf("get_information\n");
     char *trak = value;
     char *trak1  = strsep(&trak, ";");
     if(trak1 != NULL) {
@@ -26,6 +26,7 @@ int get_information(char *value, BOX_TKHD *tkhd){
     }
 }
 uint32_t add_sample_size(uint32_t sample_count, uint32_t **sample_sizes, int DataSize) {
+    //printf("add_sample_size\n");
     if(sample_count == 0) {
         (*sample_sizes)[0] = sw32(DataSize);
         return sw32(1);
@@ -38,6 +39,7 @@ uint32_t add_sample_size(uint32_t sample_count, uint32_t **sample_sizes, int Dat
 
 //读取到时间间隔时写入 stts中
 void add_delta( uint32_t delta, STTS_ENTRY **stts_entry, BOX_STTS *stts ) {
+    //printf("add_delta\n");
     if( delta == 0 ){ return; }
     delta = sw32( delta );
     stts->entry_count = sw32( stts->entry_count ); //先转换成小端序  用完再转回大端序
@@ -97,18 +99,21 @@ int get_nalu(FILE *cmsFile, char *buf, int DataSize, int *state) {
     
 }
 //写入sample数据 返回下次数据的偏移量
-int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
+uint32_t write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
     unsigned char *buf = malloc(DATA_BUF_SIZE);
     unsigned char *nalu = NULL;
     unsigned char naluType;
-    unsigned int  offset = ftell(cmsFile);  //保存当前数据的吸入位置
+    unsigned int  offset = ftell(mp4File);  //保存当前数据的吸入位置
+    //printf("offset: %d\n", offset);
     int len = 0;
     int state = 0;
     while( state == 0 ) {
         len = get_nalu(cmsFile, buf, DataSize, &state);
         if(len < 0) { break; }
+        DataSize = DataSize - len;
         nalu = buf + 4;
         naluType = nalu[0] & 0x1f;
+        len = len - 4;
         switch( naluType ) {
         case 0x07:
             if(FristWirteSample) {
@@ -118,7 +123,7 @@ int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
                 avcC->AVCLevelIndication    = nalu[3];
                 avcC->lengthSizeMinusOne    = 3;
                 avcC->sps_count             = 1;
-                uint16_t sps_size               = len - 4;
+                uint16_t sps_size           = len;
                 avcC->sps_size              = sw16(sps_size);
                 avcC->sps                   = strdup(nalu);
                 
@@ -127,13 +132,13 @@ int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
             buf[1] = ( len >> 16 ) & 0xff;
             buf[2] = ( len >> 8  ) & 0xff;
             buf[3] = ( len >> 0  ) & 0xff;
-            fwrite(buf, len, 1, mp4File);
+            fwrite(buf, len + 4, 1, mp4File);
             break;
         case 0x06:
             if(FristWirteSample) {
                 //收集pps信息
                 avcC->pps_count             = 1;
-                uint16_t pps_size           = len - 4;
+                uint16_t pps_size           = len;
                 avcC->pps_size              = sw16(pps_size);
                 avcC->pps                   = strdup(nalu);
                 FristWirteSample = false; 
@@ -142,7 +147,7 @@ int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
             buf[1] = ( len >> 16 ) & 0xff;
             buf[2] = ( len >> 8  ) & 0xff;
             buf[3] = ( len >> 0  ) & 0xff;
-            fwrite(buf, len, 1, mp4File);
+            fwrite(buf, len + 4, 1, mp4File);
             break;
 
         default:
@@ -150,7 +155,7 @@ int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
             buf[1] = ( len >> 16 ) & 0xff;
             buf[2] = ( len >> 8  ) & 0xff;
             buf[3] = ( len >> 0  ) & 0xff;
-            fwrite(buf, len, 1, mp4File);
+            fwrite(buf, len + 4, 1, mp4File);
             
         }
     }
@@ -174,6 +179,7 @@ int create_chunk(BOX_STSC *stsc, STSC_ENTRY **stsc_entry) {
         (*stsc_entry)[count -1].first_chunk               = sw32(count);
         (*stsc_entry)[count -1].sample_per_chunk          = sw32(1);
         (*stsc_entry)[count -1].sample_description_index  = sw32(1);
+        stsc->entry_count                                 = sw32(count);
     }
 
 }
@@ -183,9 +189,11 @@ int add_chunk_offset(BOX_STCO *stco,  uint32_t **chunk_offset, uint32_t offset) 
         (*chunk_offset)[0]  = sw32(offset);
     }else{
         uint32_t count = sw32(stco->entry_count);
-        count++;
-        //*chunk_offset  = (uint32_t *)realloc(*)
         
+        count++;
+        *chunk_offset  = (uint32_t *)realloc(*chunk_offset, sizeof(uint32_t) * count);
+        (*chunk_offset)[count - 1] = sw32(offset);
+        stco->entry_count = sw32(count);
     }
 
 }
@@ -195,8 +203,9 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     BOX_FTYP ftyp;
     memset(&ftyp, 0, sizeof(BOX_STTS));
 
-    BOX      mdat;
-    memset(&mdat, 0, sizeof(BOX));
+    BOX_LARGE      mdat;
+    memset(&mdat, 0, sizeof(BOX_LARGE));
+    mdat.boxSize = sw32(1);
     strncpy( (char *)&(mdat.boxType), BOX_TYPE_MDAT, 4 );
 
     BOX      moov;
@@ -303,7 +312,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     ftyp.compatible_brands[2]  = f_avc1;
     ftyp.compatible_brands[3]  = f_mp41;
     fwrite(&ftyp, sizeof(ftyp), 1, mp4File);
-
+    fwrite(&mdat, sizeof(mdat), 1, mp4File);
 //写入mdat
 
     uint8_t *sps = NULL;
@@ -323,7 +332,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     //stco chunk_offset  记录chunk的偏移量
     uint32_t   *chunk_offset  = (uint32_t *)calloc(1, sizeof(uint32_t));
     
-    
+    printf("ftyp : %d\n", ftell(mp4File));
     
 //--------------------------------
 
@@ -410,13 +419,17 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                 return -1;
             }
             break;
-        case CMS_DATA_HEADER:
+        case CMS_DATA_HEADER: {
             if ( ch == '\r' ) {
             } else if ( ch == '\n' ) {
                 if ( line_buf_ptr == 0 ) {       
                     switch( DataType ) {
                     case CMS_VEDIO_I:
                     case CMS_VEDIO_P:
+                        /*while(DataSize > 0){
+                            ch = fgetc(cmsFile);
+                            DataSize--;
+                            }*/
                         offset = write_sample(cmsFile, mp4File, DataSize, &avcC);
                         if(offset < 0){
                             return -1;
@@ -425,7 +438,8 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                                 create_chunk(&stsc, &stsc_entry);
                                 add_chunk_offset(&stco, &chunk_offset, offset);
                             }else{
-                                
+                                int count = sw32(stsc.entry_count) - 1;
+                                stsc_entry[ count ].sample_per_chunk = stsc_entry[ count ].sample_per_chunk + sw32(1);
                             }
                         }
                         state = CMS_BOUNDARY;
@@ -464,16 +478,17 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                         } else if (strcmp(value, "j") == 0) {
                         }
                     } else if (strcmp(key, "ts") == 0) {
-                        if(DataType == CMS_VEDIO_I || DataType == CMS_VEDIO_I) {
+                        if(DataType == CMS_VEDIO_I || DataType == CMS_VEDIO_P) {
                             last = now;
                             now  = strtol(value, NULL, 10);
                             uint32_t delta = now - last;
-                            printf("delta : %d \n", delta);
+                            //printf("%s  last : %d   now : %d delta : %d \n", value, last, now, delta);
                             add_delta(delta, &stts_entry, &stts);
                         }
                     } else if (strcmp(key, "l") == 0) {
-                        if(DataType == CMS_VEDIO_I || DataType == CMS_VEDIO_I) {
-                            DataSize = strtol(value, NULL, 10);
+                        if(DataType == CMS_VEDIO_I || DataType == CMS_VEDIO_P) {
+                            DataSize = strtol(value, NULL, 10) ;
+                            //printf("value : %s DataSize : %d\n", value, DataSize);
                             stsz.sample_count = add_sample_size(stsz.sample_count, &sample_sizes, DataSize);
                             int i = sw32(stsz.sample_count);
                             
@@ -497,12 +512,25 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                 }
             }
             break;
-        
+        }
         }
     }
-    
+//    printf("mdat %d  : %d\n", ftell(mp4File), mdat_size);
+    long int mdat_size = ftell(mp4File) - sizeof(ftyp);
+    mdat_size = sw64(mdat_size);
+    fseek(mp4File, sizeof(ftyp) + sizeof(BOX) , SEEK_SET);
+    fwrite((char *)&mdat_size, sizeof(long int), 1, mp4File);
+    fseek(mp4File, 0, SEEK_END);
+
     
 //------------
     return 0;
 }
 
+int main(int argc, char *argv[])
+{
+    FILE *fp = fopen("../misc/ttt.cms", "r");
+    cms2mp4(fp, "a.mp4");
+    fclose(fp);
+    return 0;
+}

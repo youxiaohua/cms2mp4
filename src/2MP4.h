@@ -5,7 +5,20 @@
 #include<stdlib.h>
 #include<stdint.h>
 #include<string.h>
+#include<unistd.h>
 #include<stdbool.h>
+
+
+#define sw64(x)  ( ( ( (uint64_t)(x) & 0xff00000000000000 ) >> 56 ) | \
+                   ( ( (uint64_t)(x) & 0x00ff000000000000 ) >> 40 ) | \
+                   ( ( (uint64_t)(x) & 0x0000ff0000000000 ) >> 24 ) | \
+                   ( ( (uint64_t)(x) & 0x000000ff00000000 ) >> 8  ) | \
+                   ( ( (uint64_t)(x) & 0x00000000ff000000 ) << 8  ) | \
+                   ( ( (uint64_t)(x) & 0x0000000000ff0000 ) << 24 ) | \
+                   ( ( (uint64_t)(x) & 0x000000000000ff00 ) << 40 ) | \
+                   ( ( (uint64_t)(x) & 0x00000000000000ff ) << 56 ) )
+
+
 #define sw32(x)  ( ( ( (uint32_t)(x) & 0xff000000 ) >> 24 ) | \
                    ( ( (uint32_t)(x) & 0x00ff0000 ) >> 8  ) | \
                    ( ( (uint32_t)(x) & 0x0000ff00 ) << 8  ) | \
@@ -15,8 +28,6 @@
 #define sw16(x)  ( ( ( (uint16_t)(x) & 0xff00 ) >> 8 ) | \
                    ( ( (uint16_t)(x) & 0x00ff ) << 8 ) )
 
-#define sw24(x)  ( ( ( (uint16_t)(x) & 0xff0000 ) >> 16 ) | \
-                   ( ( (uint16_t)(x) & 0x0000ff ) << 16 ) )
 
 #define BOX_TYPE_FTYP "ftyp"
 #define BOX_TYPE_MDAT "mdat"
@@ -304,6 +315,7 @@ typedef enum{
 }CMS_DATA_TYPE;
 
 
+
 bool FristWirteSample = true;
 
 int cms2mp4(FILE *cmsFile, char *mp4Name);
@@ -314,7 +326,7 @@ void add_delta(uint32_t delta, STTS_ENTRY **stts_entry, BOX_STTS *stts);
 
 uint32_t add_sample_size(uint32_t sample_count, uint32_t **sample_sizes, int DataSize);
 
-int write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC);
+uint32_t write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC);
 
 int get_nalu(FILE *cmsFile, char *buf, int DataSize, int *state);
 

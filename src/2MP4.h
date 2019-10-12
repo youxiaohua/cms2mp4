@@ -110,7 +110,7 @@ typedef struct box_mvhd{
     uint8_t  reserved[10];            //保留位
     uint32_t matrix[9];               //视频变换矩阵
     uint32_t pre_defined[6];          
-    uint32_t next_track_id;           //下一个track使用的id
+    uint32_t next_trak_id;            //下一个trak使用的id
 }BOX_MVHD;
 
 typedef struct box_tkhd{

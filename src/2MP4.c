@@ -8,10 +8,7 @@ int get_information(char *value, BOX_TKHD *tkhd){
     char *trak = value;
     char *trak1  = strsep(&trak, ";");
     if(trak1 != NULL) {
-        
-        
         trak1 = strtok(trak1,",");
-        
         while(trak1 != NULL) {
             if(strstr(trak1, "width") != NULL) {
                 tkhd->width = sw32( (uint32_t)atoi( &trak1[6] ) );
@@ -207,21 +204,8 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     memset(&mdat, 0, sizeof(BOX_LARGE));
     mdat.boxSize = sw32(1);
     strncpy( (char *)&(mdat.boxType), BOX_TYPE_MDAT, 4 );
+   
 
-    BOX      moov;
-    memset(&moov, 0, sizeof(BOX));
-    strncpy( (char *)&(moov.boxType), BOX_TYPE_MOOV, 4 );
-
-    //二级 在moov下
-    BOX_MVHD mvhd;
-    memset(&mvhd, 0, sizeof(BOX_MVHD));
-    strncpy( (char *)&(mvhd.header.boxType), BOX_TYPE_MVHD, 4 );
-
-    BOX      trak;
-    memset(&trak, 0, sizeof(BOX));
-    strncpy( (char *)&(trak.boxType), BOX_TYPE_TRAK, 4 );
-
-    //三级 在trak下
     BOX_TKHD tkhd;
     memset(&tkhd, 0, sizeof(BOX_TKHD));
     strncpy( (char *)&(tkhd.header.boxType), BOX_TYPE_TKHD, 4 );
@@ -516,14 +500,63 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
         }
     }
 //    printf("mdat %d  : %d\n", ftell(mp4File), mdat_size);
+
+//视频数据读取完 整理数据填入box中并写入mp4File中
+
+    //fseek回到mdat的largeBoxSize 写入数据的大小
     long int mdat_size = ftell(mp4File) - sizeof(ftyp);
     mdat_size = sw64(mdat_size);
     fseek(mp4File, sizeof(ftyp) + sizeof(BOX) , SEEK_SET);
     fwrite((char *)&mdat_size, sizeof(long int), 1, mp4File);
     fseek(mp4File, 0, SEEK_END);
 
+
+    //写入moov
+    BOX      moov;
+    memset(&moov, 0, sizeof(BOX));
+    strncpy( (char *)&(moov.boxType), BOX_TYPE_MOOV, 4 );
+
+    int moov_offset = ftell(mp4File);
+    fwrite(&moov, sizeof(moov), 1, mp4File);
+
+    //写入mvhd
+    BOX_MVHD mvhd;
+    memset(&mvhd, 0, sizeof(BOX_MVHD));
+    strncpy( (char *)&(mvhd.header.boxType), BOX_TYPE_MVHD, 4 );
     
-//------------
+    mvhd.time_scale     = sw32(1000);      //时间刻度
+    mvhd.duration       = sw32(now);       //时间长度  now保存着播放最后一帧的时间
+    mvhd.rate           = sw32(0x00010000);//播放速度
+    mvhd.volume         = sw32(0100);      //播放音量
+    mvhd.matrix[0]      = mvhd.rate;
+    mvhd.matrix[4]      = mvhd.rate;
+    mvhd.matrix[8]      = sw32(0x40000000);
+    mvhd.next_trak_id  = sw32(2);         //下一个tack使用的id
+    mvhd.header.boxSize = sw32(sizeof(mvhd));
+    fwrite(&mvhd, sizeof(mvhd), 1, mp4File);
+
+    /*-----写入trak-----*/
+    BOX      trak;
+    memset(&trak, 0, sizeof(BOX));
+    strncpy( (char *)&(trak.boxType), BOX_TYPE_TRAK, 4 );
+    
+    int trak_offset = ftell(mp4File);
+    fwrite(&trak, sizeof(trak), 1, mp4File);
+
+
+    //tkhd
+    tkhd.header.boxSize = sw32(sizeof(tkhd));
+    tkhd.full_box.flags = sw32(0x00000f);
+    tkhd.track_id       = sw32(1);
+    tkhd.duartion       = sw32(now);
+    tkhd.volume         = sw32(0x0100);
+    tkhd.matrix[0]      = mvhd.rate;
+    tkhd.matrix[4]      = mvhd.rate;
+    tkhd.matrix[8]      = sw32(0x40000000);
+    fwrite(&tkhd, sizeof(tkhd), 1, mp4File);
+    
+
+    /*-----trak-----*/
     return 0;
 }
 

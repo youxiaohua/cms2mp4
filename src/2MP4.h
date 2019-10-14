@@ -132,6 +132,17 @@ typedef struct box_tkhd{
 }BOX_TKHD;
 
 
+typedef struct edts_elst{
+    BOX      header;
+    FULL_BOX full_box;
+    uint32_t edit_count;
+}EDTS_ELST;
+
+typedef struct edit_entry{
+    uint32_t track_duration;       
+    int      media_time;             //-1表示改box是空的
+    int      media_rate;             //1
+}EDIT_ENTRY;
 
 typedef struct box_mdhd{
     BOX      header;
@@ -151,7 +162,7 @@ typedef struct box_hdlr{
     uint32_t pre_defined;
     uint32_t handler_type;            //4个字符"vide" "soun" "hint"
     uint8_t  reserved[12];            //保留位
-    uint8_t  name[13];                //track的名字
+    uint8_t  *name;                //track的名字
 }BOX_HDLR;
 
 

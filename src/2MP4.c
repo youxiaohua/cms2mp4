@@ -206,39 +206,10 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     strncpy( (char *)&(mdat.boxType), BOX_TYPE_MDAT, 4 );
    
 
-    BOX_TKHD tkhd;
-    memset(&tkhd, 0, sizeof(BOX_TKHD));
-    strncpy( (char *)&(tkhd.header.boxType), BOX_TYPE_TKHD, 4 );
+   
 
-    BOX      mdia;
-    memset(&mdia, 0, sizeof(BOX));
-    strncpy( (char *)&(mdia.boxType), BOX_TYPE_MDIA, 4 );
-
-    //四级 在mdia下
-    BOX_MDHD mdhd;
-    memset(&mdhd, 0, sizeof(BOX_MDHD));
-    strncpy( (char *)&(mdhd.header.boxType), BOX_TYPE_MDHD, 4 );
-
-    BOX_HDLR hdlr;
-    memset(&hdlr, 0, sizeof(BOX_HDLR));
-    strncpy( (char *)&(hdlr.header.boxType), BOX_TYPE_MDAT, 4 );
-
-    BOX      minf;
-    memset(&minf, 0, sizeof(BOX));
-    strncpy( (char *)&(minf.boxType), BOX_TYPE_MINF, 4 );
-
-    //五级 在minf下
-    BOX_VMHD vmhd;
-    memset(&vmhd, 0, sizeof(BOX_VMHD));
-    strncpy( (char *)&(vmhd.header.boxType), BOX_TYPE_VMHD, 4 );
-
-    BOX      dinf;
-    memset(&dinf, 0, sizeof(BOX));
-    strncpy( (char *)&(dinf.boxType), BOX_TYPE_DINF, 4 );
-
-    BOX      stbl;
-    memset(&stbl, 0, sizeof(BOX));
-    strncpy( (char *)&(stbl.boxType), BOX_TYPE_STBL, 4 );
+  
+ 
 
     //六级 在stbl下
     BOX_STSD stsd;
@@ -527,7 +498,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     mvhd.time_scale     = sw32(1000);      //时间刻度
     mvhd.duration       = sw32(now);       //时间长度  now保存着播放最后一帧的时间
     mvhd.rate           = sw32(0x00010000);//播放速度
-    mvhd.volume         = sw32(0100);      //播放音量
+    mvhd.volume         = sw16(0x0100);      //播放音量
     mvhd.matrix[0]      = mvhd.rate;
     mvhd.matrix[4]      = mvhd.rate;
     mvhd.matrix[8]      = sw32(0x40000000);
@@ -536,7 +507,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     fwrite(&mvhd, sizeof(mvhd), 1, mp4File);
 
     /*-----写入trak-----*/
-    BOX      trak;
+    BOX trak;
     memset(&trak, 0, sizeof(BOX));
     strncpy( (char *)&(trak.boxType), BOX_TYPE_TRAK, 4 );
     
@@ -545,17 +516,97 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 
 
     //tkhd
+    BOX_TKHD tkhd;
+    memset(&tkhd, 0, sizeof(BOX_TKHD));
+    strncpy( (char *)&(tkhd.header.boxType), BOX_TYPE_TKHD, 4 );
     tkhd.header.boxSize = sw32(sizeof(tkhd));
-    tkhd.full_box.flags = sw32(0x00000f);
+    tkhd.full_box.flags = 0x0f0000;  //转换成大端序后的值 原值为0x00000f 位或操作 设置改trak是否播放等信息 
     tkhd.track_id       = sw32(1);
-    tkhd.duartion       = sw32(now);
-    tkhd.volume         = sw32(0x0100);
+    tkhd.duration       = sw32(now);
+    tkhd.volume         = sw16(0x0100);
     tkhd.matrix[0]      = mvhd.rate;
     tkhd.matrix[4]      = mvhd.rate;
     tkhd.matrix[8]      = sw32(0x40000000);
     fwrite(&tkhd, sizeof(tkhd), 1, mp4File);
     
+    //edts
+    BOX edts;
+    memset(&edts, 0, sizeof(BOX));
+    strncpy( (char *)&(edts.boxType), "edts", 4 );
+    EDTS_ELST elst;
+    memset(&elst, 0, sizeof(elst));
+    strncpy( (char *)&(elst.header.boxType), "elst", 4 );
+    elst.edit_count = sw32(1);
+    EDIT_ENTRY edit;
+    memset(&edit, 0, sizeof(edit));
+    edit.media_time     = 0x10000001; // -1
+    edit.meida_rate     = sw32(1);
+    int elst_size       = sizeof(else) + sizeof(edit);
+    elst.header.boxSize = sw32(elst_size);
+    int edts_size       = sizeof(edts) + elst_size;
+    edts.boxSize        = sw32(edts_size);
 
+    fwrite( (char *)&edts, sizeof(edts), 1, mp4File );
+    fwrite( (char *)&elst, sizeof(elst), 1, mp4File );
+    fwrite( (char *)&edit, sizeof(edit), 1, mp4File );
+    
+    
+    
+    //mdia
+    BOX mdia;
+    memset(&mdia, 0, sizeof(BOX));
+    strncpy( (char *)&(mdia.boxType), BOX_TYPE_MDIA, 4 );
+    int mdia_offset = ftell(mp4File);
+    fwrite(&mdia, sizeof(mdia), 1, mp4File);
+    
+    //mdhd
+    BOX_MDHD mdhd;
+    memset(&mdhd, 0, sizeof(BOX_MDHD));
+    strncpy( (char *)&(mdhd.header.boxType), BOX_TYPE_MDHD, 4 );
+    mdhd.time_scale      = sw32(1000);
+    mdhd.duration        = sw32(now);
+    mdhd.language        = sw32(21956);
+    mdhd.header.boxSize  = sw32(sizeof(mdhd))
+    /*21956  
+      0 10101 01110 00100 
+        21    14    4  
+      最高位为0 后面每5位为一个字母  数值表示字母的序号 
+      21表示u 14表示n 4表示d  参照ISO_639-2/T und表示未定义的语言类型
+    */
+    fwrite( (char *)&mdhd, sizeof(mdhd), 1, mp4File );
+
+
+    BOX_HDLR hdlr;
+    memset(&hdlr, 0, sizeof(BOX_HDLR));
+    strncpy( (char *)&(hdlr.header.boxType), BOX_TYPE_MDAT, 4 );
+    strncpy( (char *)&(hdlr.handler), "vide", 4 );
+    hdlr.name             = strdup("VideoHandler");
+    int hdlr_size         = sizeof(hdlr) - sizeof(uint8_t *) + strlen(hdlr.name);
+    hdlr.header.boxSize   = sw32(hdlr_size);
+    fwrite( (char *)&hdlr, sizeof(hdlr) - sizeof(uint8_t *), 1, mp4File );
+    fwrite( hdlr.name, strlen(hdlr.name), 1, mp4File);
+    free(hdlr.name);
+    
+    BOX minf;
+    memset(&minf, 0, sizeof(BOX));
+    strncpy( (char *)&(minf.boxType), BOX_TYPE_MINF, 4 );
+    int minf_size = ftell(mp4File);
+    fwrite( (char *)minf, sizeof(minf), 1, mp4File );
+
+    //五级 在minf下
+    BOX_VMHD vmhd;
+    memset(&vmhd, 0, sizeof(BOX_VMHD));
+    strncpy( (char *)&(vmhd.header.boxType), BOX_TYPE_VMHD, 4 );
+
+    BOX dinf;
+    memset(&dinf, 0, sizeof(BOX));
+    strncpy( (char *)&(dinf.boxType), BOX_TYPE_DINF, 4 );
+
+    BOX stbl;
+    memset(&stbl, 0, sizeof(BOX));
+    strncpy( (char *)&(stbl.boxType), BOX_TYPE_STBL, 4 );
+    
+    
     /*-----trak-----*/
     return 0;
 }

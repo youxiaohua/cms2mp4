@@ -200,12 +200,14 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     BOX_FTYP ftyp;
     memset(&ftyp, 0, sizeof(BOX_STTS));
 
-    BOX_LARGE      mdat;
+    BOX_LARGE mdat;
     memset(&mdat, 0, sizeof(BOX_LARGE));
     mdat.boxSize = sw32(1);
     strncpy( (char *)&(mdat.boxType), BOX_TYPE_MDAT, 4 );
    
-
+    BOX_TKHD tkhd;
+    memset(&tkhd, 0, sizeof(BOX_TKHD));
+    strncpy( (char *)&(tkhd.header.boxType), BOX_TYPE_TKHD, 4 );
    
 
   
@@ -470,7 +472,6 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
         }
         }
     }
-//    printf("mdat %d  : %d\n", ftell(mp4File), mdat_size);
 
 //视频数据读取完 整理数据填入box中并写入mp4File中
 
@@ -516,9 +517,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 
 
     //tkhd
-    BOX_TKHD tkhd;
-    memset(&tkhd, 0, sizeof(BOX_TKHD));
-    strncpy( (char *)&(tkhd.header.boxType), BOX_TYPE_TKHD, 4 );
+    
     tkhd.header.boxSize = sw32(sizeof(tkhd));
     tkhd.full_box.flags = 0x0f0000;  //转换成大端序后的值 原值为0x00000f 位或操作 设置改trak是否播放等信息 
     tkhd.track_id       = sw32(1);
@@ -531,17 +530,17 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     
     //edts
     BOX edts;
-    memset(&edts, 0, sizeof(BOX));
-    strncpy( (char *)&(edts.boxType), "edts", 4 );
     EDTS_ELST elst;
-    memset(&elst, 0, sizeof(elst));
-    strncpy( (char *)&(elst.header.boxType), "elst", 4 );
-    elst.edit_count = sw32(1);
     EDIT_ENTRY edit;
+    memset(&edts, 0, sizeof(BOX));
+    memset(&elst, 0, sizeof(elst));
     memset(&edit, 0, sizeof(edit));
-    edit.media_time     = 0x10000001; // -1
-    edit.meida_rate     = sw32(1);
-    int elst_size       = sizeof(else) + sizeof(edit);
+    strncpy( (char *)&(edts.boxType), "edts", 4 );
+    strncpy( (char *)&(elst.header.boxType), "elst", 4 );
+    elst.edit_count     = sw32(1);
+    edit.media_time     = 0x01000010; // -1
+    edit.media_rate     = sw32(1);
+    int elst_size       = sizeof(elst) + sizeof(edit);
     elst.header.boxSize = sw32(elst_size);
     int edts_size       = sizeof(edts) + elst_size;
     edts.boxSize        = sw32(edts_size);
@@ -551,22 +550,20 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     fwrite( (char *)&edit, sizeof(edit), 1, mp4File );
     
     
-    
     //mdia
     BOX mdia;
+    int mdia_offset = ftell(mp4File);
     memset(&mdia, 0, sizeof(BOX));
     strncpy( (char *)&(mdia.boxType), BOX_TYPE_MDIA, 4 );
-    int mdia_offset = ftell(mp4File);
     fwrite(&mdia, sizeof(mdia), 1, mp4File);
     
-    //mdhd
     BOX_MDHD mdhd;
     memset(&mdhd, 0, sizeof(BOX_MDHD));
     strncpy( (char *)&(mdhd.header.boxType), BOX_TYPE_MDHD, 4 );
     mdhd.time_scale      = sw32(1000);
     mdhd.duration        = sw32(now);
-    mdhd.language        = sw32(21956);
-    mdhd.header.boxSize  = sw32(sizeof(mdhd))
+    mdhd.language        = sw16(21956);
+    mdhd.header.boxSize  = sw32(sizeof(mdhd));
     /*21956  
       0 10101 01110 00100 
         21    14    4  
@@ -577,30 +574,52 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 
 
     BOX_HDLR hdlr;
+    int hdlr_size = sizeof(hdlr) - sizeof(uint8_t *) + strlen(hdlr.name);
     memset(&hdlr, 0, sizeof(BOX_HDLR));
     strncpy( (char *)&(hdlr.header.boxType), BOX_TYPE_MDAT, 4 );
-    strncpy( (char *)&(hdlr.handler), "vide", 4 );
+    strncpy( (char *)&(hdlr.handler_type), "vide", 4 );
     hdlr.name             = strdup("VideoHandler");
-    int hdlr_size         = sizeof(hdlr) - sizeof(uint8_t *) + strlen(hdlr.name);
     hdlr.header.boxSize   = sw32(hdlr_size);
     fwrite( (char *)&hdlr, sizeof(hdlr) - sizeof(uint8_t *), 1, mp4File );
     fwrite( hdlr.name, strlen(hdlr.name), 1, mp4File);
     free(hdlr.name);
-    
+
+    //minf
     BOX minf;
+    int minf_size = ftell(mp4File);
     memset(&minf, 0, sizeof(BOX));
     strncpy( (char *)&(minf.boxType), BOX_TYPE_MINF, 4 );
-    int minf_size = ftell(mp4File);
-    fwrite( (char *)minf, sizeof(minf), 1, mp4File );
-
-    //五级 在minf下
+    fwrite( (char *)&minf, sizeof(minf), 1, mp4File );
+    
+    
     BOX_VMHD vmhd;
     memset(&vmhd, 0, sizeof(BOX_VMHD));
     strncpy( (char *)&(vmhd.header.boxType), BOX_TYPE_VMHD, 4 );
+    vmhd.full_box.flags = 0x010000;    //这里总是=1
+    vmhd.header.boxSize = sw32(sizeof(vmhd));
+    fwrite( (char *)&vmhd, sizeof(vmhd), 1, mp4File );
 
     BOX dinf;
+    DREF_URL url;
+    DINF_DREF dref;
+    int dinf_size;
+    int dref_size;
     memset(&dinf, 0, sizeof(BOX));
+    memset(&dref, 0, sizeof(dref));
+    memset(&url, 0, sizeof(url));
     strncpy( (char *)&(dinf.boxType), BOX_TYPE_DINF, 4 );
+    strncpy( (char *)&(url.header.boxType), " url", 4 );
+    strncpy( (char *)&(dref.header.boxType), "dref", 4 );
+    dref.entry_count    = sw32(1);
+    url.full_box.flags  = 0x010000; 
+    url.header.boxSize  = sizeof(url);
+    dref_size           = sizeof(url) + sizeof(dref);
+    dinf_size           = dref_size + sizeof(dinf);
+    dref.header.boxSize = sw32(dref_size);
+    dinf.boxSize        = sw32(dref_size);
+    fwrite( (char *)&dinf, dinf_size, 1, mp4File );
+    fwrite( (char *)&dref, dref_size, 1, mp4File );
+    fwrite( (char *)&url, sizeof(url), 1, mp4File );
 
     BOX stbl;
     memset(&stbl, 0, sizeof(BOX));

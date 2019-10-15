@@ -193,17 +193,17 @@ typedef struct box_smhd{//音频
   --url
   如果track被分为若干段, 用来定位track数据 每一段url指向地址来获取数据
 */
-typedef struct box_dref{
+typedef struct dinf_dref{
     BOX      header;
     FULL_BOX full_box;           
     uint32_t entry_count;              //"url"或"urn"表的元素个数 
-}BOX_FREF;
+}DINF_DREF;
 
-typedef struct box_url{
+typedef struct dref_url{
     BOX      header;
     FULL_BOX full_box;                 //flag 值为1 表示url字符串为空
     //uint8_t ulr_data[n];             //
-}BOX_URL;
+}DREF_URL;
 
 
 //  stsd 存放音视频解码信息 根据当前的track数据类型 分为avc1(视频) mp4a(音频)

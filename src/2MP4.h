@@ -162,7 +162,7 @@ typedef struct box_hdlr{
     uint32_t pre_defined;
     uint32_t handler_type;            //4个字符"vide" "soun" "hint"
     uint8_t  reserved[12];            //保留位
-    uint8_t  *name;                //track的名字
+    int8_t   *name;                //track的名字
 }BOX_HDLR;
 
 
@@ -218,7 +218,7 @@ typedef struct box_avc1{//视频解码信息
     uint8_t  resved[6];               //保留字段
     uint16_t data_reference_index;    //数据查询索引  与stsc 的 sample_description_index关联 
     uint8_t  resved2[16];             //保留字段
-    uint16_t windth;
+    uint16_t width;
     uint16_t height;
     uint32_t hrsl;                    //水平分辨率0x00480000 表示72dpi
     uint32_t vtsl;                    //垂直分辨率0x00480000
@@ -293,6 +293,7 @@ typedef struct box_stsc{//media中的sample被分组成chunk,包含sample-chunk�
 typedef struct box_stss{//包含media中的关键帧的sample表,此表不存在便是每一个sample都是关键帧
     BOX        header;
     FULL_BOX   full_box;
+    uint32_t   entry_count;
     //uint32_t   *sample_number;            //sample关键帧的序号
 }BOX_STSS;
 
@@ -344,5 +345,9 @@ int get_nalu(FILE *cmsFile, char *buf, int DataSize, int *state);
 int create_chunk(BOX_STSC *stsc, STSC_ENTRY **stsc_entry);
 
 int add_chunk_offset(BOX_STCO *stco,  uint32_t **chunk_offset, uint32_t offset);
+
+void write_stsd(BOX_AVC1 avc1);
+
+
 #endif
 

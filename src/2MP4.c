@@ -194,6 +194,33 @@ int add_chunk_offset(BOX_STCO *stco,  uint32_t **chunk_offset, uint32_t offset) 
     }
 
 }
+
+int write_stsd(FILE *mp4File, BOX_AVCC *avcC, uint16_t width, uint16_t height) {
+    BOX_AVC1 avc1;
+    int avc1_offset = ftell(mp4File);
+    memset(&avc1, 0, sizeof(BOX_AVC1));
+    strncpy( (char *)&(avc1.header.boxType), "avc1", 4 );
+    avc1.width                = sw16(width);
+    avc1.height               = sw16(height);
+    avc1.data_reference_index = sw32(1);
+    avc1.hrsl                 = sw32(0x00480000);
+    avc1.vtsl                 = sw32(0x00480000);
+    avc1.frame_count          = sw16(1);
+    avc1.depth                = sw16(0x0018);
+    avc1.pre_defined          = 0xffff; //-1
+   
+    int avcC_size = sizeof(BOX_AVCC) + avcC->sps_size + avcC->pps_size - 8;
+    avc1.header.boxSize       = sw32( sizeof(avc1) );
+    fwrite( (char *)&avc1, sizeof(avc1), 1, mp4File);
+    fwrite( (char *)avcC, 17, 1, mp4File);
+    fwrite( (char *)avcC->sps, sw16(avcC->sps_size), 1, mp4File);
+    fwrite( (char *)avcC->pps, sw16(avcC->pps_size), 1, mp4File);
+    
+    return avc1_offset;
+    
+}
+
+    
 /* mp4文件中的box是网络字节序 写入数据的时候需要先转换字节序 */
 int cms2mp4(FILE *cmsFile, char *mp4Name){
     //一级box
@@ -203,50 +230,22 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     BOX_LARGE mdat;
     memset(&mdat, 0, sizeof(BOX_LARGE));
     mdat.boxSize = sw32(1);
-    strncpy( (char *)&(mdat.boxType), BOX_TYPE_MDAT, 4 );
+    strncpy( (char *)&(mdat.boxType), "mdat", 4 );
    
     BOX_TKHD tkhd;
     memset(&tkhd, 0, sizeof(BOX_TKHD));
-    strncpy( (char *)&(tkhd.header.boxType), BOX_TYPE_TKHD, 4 );
+    strncpy( (char *)&(tkhd.header.boxType), "tkhd", 4 );
    
-
-  
- 
-
-    //六级 在stbl下
-    BOX_STSD stsd;
-    memset(&stsd, 0, sizeof(BOX_STSD));
-    strncpy( (char *)&(stsd.header.boxType), BOX_TYPE_STSD, 4 );
-
-    BOX_STTS stts;
-    memset(&stts, 0, sizeof(BOX_STTS));
-    strncpy( (char *)&(stts.header.boxType), BOX_TYPE_STTS, 4 );
-
-    BOX_STSS stss;
-    memset(&stss, 0, sizeof(BOX_STSS));
-    strncpy( (char *)&(stss.header.boxType), BOX_TYPE_STSS, 4 );
-
-    BOX_STSC stsc;
-    memset(&stsc, 0, sizeof(BOX_STSC));
-    strncpy( (char *)&(stsc.header.boxType), BOX_TYPE_STSC, 4 );
-
-    BOX_STSZ stsz;
-    memset(&stsz, 0, sizeof(BOX_STSZ));
-    strncpy( (char *)&(stsz.header.boxType), BOX_TYPE_STSZ, 4 );
-
-    BOX_STCO stco;
-    memset(&stco, 0, sizeof(BOX_STCO));
-    strncpy( (char *)&(stco.header.boxType), BOX_TYPE_STCO, 4 );
-
-    //七级 在stsd下
-    BOX_AVC1 avc1;
-    memset(&avc1, 0, sizeof(BOX_AVC1));
-    strncpy( (char *)&(avc1.header.boxType), BOX_TYPE_AVC1, 4 );
-
-    //八级 在avc1下
     BOX_AVCC avcC;
     memset(&avcC, 0, sizeof(BOX_AVCC));
-    strncpy( (char *)&(avcC.header.boxType), BOX_TYPE_AVCC, 4 );
+    strncpy( (char *)&(avcC.header.boxType), "avcC", 4 );
+  
+ 
+    
+  
+
+    //八级 在avc1下
+
     
 
     
@@ -257,7 +256,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     }
     //写入mp4头部
     ftyp.header.boxSize = sw32( sizeof( ftyp ) );
-    strncpy( (char *)&(ftyp.header.boxType), BOX_TYPE_FTYP, 4 );
+    strncpy( (char *)&(ftyp.header.boxType), "ftyp", 4 );
     FTYP_BRANDS f_isom = { "isom" };
     FTYP_BRANDS f_iso2 = { "iso2" };
     FTYP_BRANDS f_avc1 = { "avc1" };
@@ -284,7 +283,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     //stss sample number 记录关键帧序号
     int number = 1;    //记录帧的序号
     int sample_i = 0;  //记录当前已添加关键帧序号
-    uint32_t   *sample_number = (uint32_t *)calloc(1, sizeof(uint32_t));
+    uint32_t   *stss_entry = (uint32_t *)calloc(1, sizeof(uint32_t));
 
     //stco chunk_offset  记录chunk的偏移量
     uint32_t   *chunk_offset  = (uint32_t *)calloc(1, sizeof(uint32_t));
@@ -419,12 +418,12 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                         if (strcmp(value, "i") == 0) {
                             DataType = CMS_VEDIO_I;
                             if(sample_i == 0) {
-                                sample_number[0] = sw32(number);
+                                stss_entry[0] = sw32(number);
                                 sample_i++;
                             } else {
                                 sample_i++;
-                                sample_number = (uint32_t *)realloc(sample_number, sizeof(uint32_t) * sample_i);
-                                sample_number[sample_i - 1] = sw32(number);
+                                stss_entry = (uint32_t *)realloc(stss_entry, sizeof(uint32_t) * sample_i);
+                                stss_entry[sample_i - 1] = sw32(number);
                             }
                             number++;
                         } else if (strcmp(value, "p") == 0) {
@@ -486,7 +485,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     //写入moov
     BOX      moov;
     memset(&moov, 0, sizeof(BOX));
-    strncpy( (char *)&(moov.boxType), BOX_TYPE_MOOV, 4 );
+    strncpy( (char *)&(moov.boxType), "moov", 4 );
 
     int moov_offset = ftell(mp4File);
     fwrite(&moov, sizeof(moov), 1, mp4File);
@@ -494,12 +493,12 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     //写入mvhd
     BOX_MVHD mvhd;
     memset(&mvhd, 0, sizeof(BOX_MVHD));
-    strncpy( (char *)&(mvhd.header.boxType), BOX_TYPE_MVHD, 4 );
+    strncpy( (char *)&(mvhd.header.boxType), "mvhd", 4 );
     
     mvhd.time_scale     = sw32(1000);      //时间刻度
     mvhd.duration       = sw32(now);       //时间长度  now保存着播放最后一帧的时间
     mvhd.rate           = sw32(0x00010000);//播放速度
-    mvhd.volume         = sw16(0x0100);      //播放音量
+    mvhd.volume         = sw16(0x0100);    //播放音量
     mvhd.matrix[0]      = mvhd.rate;
     mvhd.matrix[4]      = mvhd.rate;
     mvhd.matrix[8]      = sw32(0x40000000);
@@ -510,7 +509,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     /*-----写入trak-----*/
     BOX trak;
     memset(&trak, 0, sizeof(BOX));
-    strncpy( (char *)&(trak.boxType), BOX_TYPE_TRAK, 4 );
+    strncpy( (char *)&(trak.boxType), "trak", 4 );
     
     int trak_offset = ftell(mp4File);
     fwrite(&trak, sizeof(trak), 1, mp4File);
@@ -538,7 +537,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     strncpy( (char *)&(edts.boxType), "edts", 4 );
     strncpy( (char *)&(elst.header.boxType), "elst", 4 );
     elst.edit_count     = sw32(1);
-    edit.media_time     = 0x01000010; // -1
+    edit.media_time     = 0xffffffff; // -1
     edit.media_rate     = sw32(1);
     int elst_size       = sizeof(elst) + sizeof(edit);
     elst.header.boxSize = sw32(elst_size);
@@ -554,12 +553,12 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     BOX mdia;
     int mdia_offset = ftell(mp4File);
     memset(&mdia, 0, sizeof(BOX));
-    strncpy( (char *)&(mdia.boxType), BOX_TYPE_MDIA, 4 );
+    strncpy( (char *)&(mdia.boxType), "mdia", 4 );
     fwrite(&mdia, sizeof(mdia), 1, mp4File);
     
     BOX_MDHD mdhd;
     memset(&mdhd, 0, sizeof(BOX_MDHD));
-    strncpy( (char *)&(mdhd.header.boxType), BOX_TYPE_MDHD, 4 );
+    strncpy( (char *)&(mdhd.header.boxType), "mdhd", 4 );
     mdhd.time_scale      = sw32(1000);
     mdhd.duration        = sw32(now);
     mdhd.language        = sw16(21956);
@@ -574,12 +573,13 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 
 
     BOX_HDLR hdlr;
-    int hdlr_size = sizeof(hdlr) - sizeof(uint8_t *) + strlen(hdlr.name);
+    int hdlr_size;
     memset(&hdlr, 0, sizeof(BOX_HDLR));
-    strncpy( (char *)&(hdlr.header.boxType), BOX_TYPE_MDAT, 4 );
+    strncpy( (char *)&(hdlr.header.boxType), "hdlr", 4 );
     strncpy( (char *)&(hdlr.handler_type), "vide", 4 );
-    hdlr.name             = strdup("VideoHandler");
-    hdlr.header.boxSize   = sw32(hdlr_size);
+    hdlr.name           = strdup("VideoHandler");
+    hdlr_size           = sizeof(hdlr) - sizeof(int8_t *) + strlen(hdlr.name);
+    hdlr.header.boxSize = sw32(hdlr_size);
     fwrite( (char *)&hdlr, sizeof(hdlr) - sizeof(uint8_t *), 1, mp4File );
     fwrite( hdlr.name, strlen(hdlr.name), 1, mp4File);
     free(hdlr.name);
@@ -588,13 +588,13 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     BOX minf;
     int minf_size = ftell(mp4File);
     memset(&minf, 0, sizeof(BOX));
-    strncpy( (char *)&(minf.boxType), BOX_TYPE_MINF, 4 );
+    strncpy( (char *)&(minf.boxType), "minf", 4 );
     fwrite( (char *)&minf, sizeof(minf), 1, mp4File );
     
     
     BOX_VMHD vmhd;
     memset(&vmhd, 0, sizeof(BOX_VMHD));
-    strncpy( (char *)&(vmhd.header.boxType), BOX_TYPE_VMHD, 4 );
+    strncpy( (char *)&(vmhd.header.boxType), "vmhd", 4 );
     vmhd.full_box.flags = 0x010000;    //这里总是=1
     vmhd.header.boxSize = sw32(sizeof(vmhd));
     fwrite( (char *)&vmhd, sizeof(vmhd), 1, mp4File );
@@ -608,7 +608,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     memset(&dref, 0, sizeof(dref));
     memset(&url, 0, sizeof(url));
     strncpy( (char *)&(dinf.boxType), BOX_TYPE_DINF, 4 );
-    strncpy( (char *)&(url.header.boxType), " url", 4 );
+    strncpy( (char *)&(url.header.boxType), "url ", 4 );
     strncpy( (char *)&(dref.header.boxType), "dref", 4 );
     dref.entry_count    = sw32(1);
     url.full_box.flags  = 0x010000; 
@@ -622,9 +622,44 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     fwrite( (char *)&url, sizeof(url), 1, mp4File );
 
     BOX stbl;
+    int stbl_offset = ftell(mp4File);
     memset(&stbl, 0, sizeof(BOX));
-    strncpy( (char *)&(stbl.boxType), BOX_TYPE_STBL, 4 );
+    strncpy( (char *)&(stbl.boxType), "stbl", 4 );
+    fwrite( (char *)&stbl, sizeof(stbl), 1, mp4File );
+    write_stsd(mp4File, &avcC, (uint16_t)sw32(tkhd.width), (uint16_t)sw32(tkhd.height));
+     
+    BOX_STTS stts;
+    memset(&stts, 0, sizeof(BOX_STTS));
+    strncpy( (char *)&(stts.header.boxType), "stts", 4 );
+    int stts_entry_count = sw32(stts.entry_count);
+    int stts_size        = sizeof(stts) + stts_entry_count * sizeof(STTS_ENTRY);
+    fwrite( (char *)&stts, sizeof(stts), 1, mp4File);
+    fwrite( (char *)&stts_entry, stts_entry_count * sizeof(STTS_ENTRY), 1, mp4File);
+
     
+    BOX_STSS stss;
+    memset(&stss, 0, sizeof(BOX_STSS));
+    strncpy( (char *)&(stss.header.boxType), "stss", 4 );
+    stss.entry_count = sample_i;
+    int stss_size    = sizeof(stss) + sizeof(uint32_t) * sample_i;
+    fwrite( (char *)&stss, sizeof(stss), 1, mp4File);
+    fwrite( (char *)&stss_entry, sample_i * sizeof(uint32_t), 1, mp4File);
+    
+
+    BOX_STSC stsc;
+    memset(&stsc, 0, sizeof(BOX_STSC));
+    strncpy( (char *)&(stsc.header.boxType), "stsc", 4 );
+
+    BOX_STSZ stsz;
+    memset(&stsz, 0, sizeof(BOX_STSZ));
+    strncpy( (char *)&(stsz.header.boxType), "stsz", 4 );
+
+    BOX_STCO stco;
+    memset(&stco, 0, sizeof(BOX_STCO));
+    strncpy( (char *)&(stco.header.boxType), "stco", 4 );
+
+    //七级 在stsd下
+   
     
     /*-----trak-----*/
     return 0;

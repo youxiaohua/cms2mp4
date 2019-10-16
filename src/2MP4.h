@@ -19,40 +19,17 @@
                    ( ( (uint64_t)(x) & 0x00000000000000ff ) << 56 ) )
 
 
+
 #define sw32(x)  ( ( ( (uint32_t)(x) & 0xff000000 ) >> 24 ) | \
                    ( ( (uint32_t)(x) & 0x00ff0000 ) >> 8  ) | \
                    ( ( (uint32_t)(x) & 0x0000ff00 ) << 8  ) | \
                    ( ( (uint32_t)(x) & 0x000000ff ) << 24 ) )
 
 
+
 #define sw16(x)  ( ( ( (uint16_t)(x) & 0xff00 ) >> 8 ) | \
                    ( ( (uint16_t)(x) & 0x00ff ) << 8 ) )
 
-
-#define BOX_TYPE_FTYP "ftyp"
-#define BOX_TYPE_MDAT "mdat"
-#define BOX_TYPE_MOOV "moov"
-#define BOX_TYPE_MVHD "mvhd"
-#define BOX_TYPE_TRAK "trak"
-#define BOX_TYPE_TKHD "tkhd"
-#define BOX_TYPE_EDTS "edts"
-#define BOX_TYPE_MDIA "mdia"
-#define BOX_TYPE_MDHD "mdhd"
-#define BOX_TYPE_HDLR "hdlr"
-#define BOX_TYPE_MINF "minf"
-#define BOX_TYPE_VMHD "vmhd"
-#define BOX_TYPE_DINF "dinf"
-#define BOX_TYPE_DREF "dref"
-#define BOX_TYPE_STBL "stbl"
-#define BOX_TYPE_STSD "stsd"
-#define BOX_TYPE_STTS "stts"
-#define BOX_TYPE_STSS "stss"
-#define BOX_TYPE_STSC "stsc"
-#define BOX_TYPE_STSZ "stsz"
-#define BOX_TYPE_STCO "stco"
-#define BOX_TYPE_UDTA "udta"
-#define BOX_TYPE_AVC1 "avc1"
-#define BOX_TYPE_AVCC "avcC"
 
 #define CMS_FLAG_TRACK_FOUND  0x01
 #define CMS_FLAG_FORMAT_FOUND 0x02
@@ -279,7 +256,7 @@ typedef struct box_stsz{//包含sample的数量和每个sample的字节大小
 
 typedef struct stsc_entry{
     uint32_t first_chunk;              //当前第一个chunk的序号
-    uint32_t sample_per_chunk;        //每个chunk拥有的sample 
+    uint32_t sample_per_chunk;         //每个chunk拥有的sample 
     uint32_t sample_description_index; //采样描述索引  在stsd中找到描述信息
 }STSC_ENTRY;
 
@@ -326,7 +303,7 @@ typedef enum{
     CMS_AUDIO,
 }CMS_DATA_TYPE;
 
-
+uint32_t sw(uint32_t x);
 
 bool FristWirteSample = true;
 
@@ -346,7 +323,7 @@ int create_chunk(BOX_STSC *stsc, STSC_ENTRY **stsc_entry);
 
 int add_chunk_offset(BOX_STCO *stco,  uint32_t **chunk_offset, uint32_t offset);
 
-void write_stsd(BOX_AVC1 avc1);
+int write_stsd(FILE *mp4File, BOX_AVCC *avcC, uint16_t width, uint16_t height);
 
 
 #endif

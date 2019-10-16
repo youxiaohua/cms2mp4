@@ -1,6 +1,14 @@
 #include "2MP4.h"
 
 
+uint32_t sw(uint32_t x){
+    return sw32(x);
+}
+uint32_t sw6(uint64_t x){
+    return sw64(x);
+}
+
+
 
 //读取到track信息时 获取视频的信息
 int get_information(char *value, BOX_TKHD *tkhd){
@@ -95,7 +103,7 @@ int get_nalu(FILE *cmsFile, char *buf, int DataSize, int *state) {
     return pos + 1;
     
 }
-//写入sample数据 返回下次数据的偏移量
+//写入sample数据 当前帧数据的偏移量
 uint32_t write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC) {
     unsigned char *buf = malloc(DATA_BUF_SIZE);
     unsigned char *nalu = NULL;
@@ -190,33 +198,42 @@ int add_chunk_offset(BOX_STCO *stco,  uint32_t **chunk_offset, uint32_t offset) 
         count++;
         *chunk_offset  = (uint32_t *)realloc(*chunk_offset, sizeof(uint32_t) * count);
         (*chunk_offset)[count - 1] = sw32(offset);
-        stco->entry_count = sw32(count);
+        stco->entry_count = sw32(count); //
     }
 
 }
 
 int write_stsd(FILE *mp4File, BOX_AVCC *avcC, uint16_t width, uint16_t height) {
     BOX_AVC1 avc1;
-    int avc1_offset = ftell(mp4File);
+    BOX_STSD stsd;
+    
+    memset(&stsd, 0, sizeof(BOX_STSD));
+    strncpy( (char *)&(stsd.header.boxType), "stsd", 4 );
     memset(&avc1, 0, sizeof(BOX_AVC1));
     strncpy( (char *)&(avc1.header.boxType), "avc1", 4 );
     avc1.width                = sw16(width);
     avc1.height               = sw16(height);
-    avc1.data_reference_index = sw32(1);
+    avc1.data_reference_index = sw16(1);
     avc1.hrsl                 = sw32(0x00480000);
     avc1.vtsl                 = sw32(0x00480000);
     avc1.frame_count          = sw16(1);
     avc1.depth                = sw16(0x0018);
     avc1.pre_defined          = 0xffff; //-1
-   
-    int avcC_size = sizeof(BOX_AVCC) + avcC->sps_size + avcC->pps_size - 8;
-    avc1.header.boxSize       = sw32( sizeof(avc1) );
+    int avcC_size             = sizeof(BOX_AVCC) + avcC->sps_size + avcC->pps_size - 8;
+    int avc1_size             = sizeof(avc1) + avcC_size;
+    int stsd_size             = sizeof(stsd) + avc1_size;
+    stsd.header.boxSize       = sw32(avc1_size + avcC_size);
+    avcC->header.boxSize      = sw32(avcC_size);
+    avc1.header.boxSize       = sw32( avc1_size );
+    fwrite( (char *)&stsd, sizeof(stsd), 1, mp4File);
     fwrite( (char *)&avc1, sizeof(avc1), 1, mp4File);
     fwrite( (char *)avcC, 17, 1, mp4File);
     fwrite( (char *)avcC->sps, sw16(avcC->sps_size), 1, mp4File);
+    fwrite( (char *)(&avcC->pps_count), sizeof(uint8_t), 1, mp4File);
+    fwrite( (char *)(&avcC->pps_size), sizeof(uint32_t), 1, mp4File);
     fwrite( (char *)avcC->pps, sw16(avcC->pps_size), 1, mp4File);
     
-    return avc1_offset;
+    return 0;
     
 }
 
@@ -240,11 +257,29 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     memset(&avcC, 0, sizeof(BOX_AVCC));
     strncpy( (char *)&(avcC.header.boxType), "avcC", 4 );
   
- 
+    BOX_STTS stts;
+    memset(&stts, 0, sizeof(BOX_STTS));
+    strncpy( (char *)&(stts.header.boxType), "stts", 4 );
     
-  
+    BOX_STSS stss;
+    memset(&stss, 0, sizeof(BOX_STSS));
+    strncpy( (char *)&(stss.header.boxType), "stss", 4 );
+    
 
-    //八级 在avc1下
+    BOX_STSC stsc;
+    memset(&stsc, 0, sizeof(BOX_STSC));
+    strncpy( (char *)&(stsc.header.boxType), "stsc", 4 );
+
+    BOX_STSZ stsz;
+    memset(&stsz, 0, sizeof(BOX_STSZ));
+    strncpy( (char *)&(stsz.header.boxType), "stsz", 4 );
+
+    BOX_STCO stco;
+    memset(&stco, 0, sizeof(BOX_STCO));
+    strncpy( (char *)&(stco.header.boxType), "stco", 4 );
+
+
+
 
     
 
@@ -271,8 +306,6 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     fwrite(&mdat, sizeof(mdat), 1, mp4File);
 //写入mdat
 
-    uint8_t *sps = NULL;
-    uint8_t *pps = NULL;
 
     //stts entry 记录时间戳间隔和
     STTS_ENTRY *stts_entry    = (STTS_ENTRY *)calloc(1, sizeof(STTS_ENTRY));
@@ -476,7 +509,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 
     //fseek回到mdat的largeBoxSize 写入数据的大小
     long int mdat_size = ftell(mp4File) - sizeof(ftyp);
-    mdat_size = sw64(mdat_size);
+    mdat.largeBoxSize  = sw64(mdat_size);
     fseek(mp4File, sizeof(ftyp) + sizeof(BOX) , SEEK_SET);
     fwrite((char *)&mdat_size, sizeof(long int), 1, mp4File);
     fseek(mp4File, 0, SEEK_END);
@@ -586,7 +619,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 
     //minf
     BOX minf;
-    int minf_size = ftell(mp4File);
+    int minf_offset = ftell(mp4File);
     memset(&minf, 0, sizeof(BOX));
     strncpy( (char *)&(minf.boxType), "minf", 4 );
     fwrite( (char *)&minf, sizeof(minf), 1, mp4File );
@@ -607,7 +640,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     memset(&dinf, 0, sizeof(BOX));
     memset(&dref, 0, sizeof(dref));
     memset(&url, 0, sizeof(url));
-    strncpy( (char *)&(dinf.boxType), BOX_TYPE_DINF, 4 );
+    strncpy( (char *)&(dinf.boxType), "dinf", 4 );
     strncpy( (char *)&(url.header.boxType), "url ", 4 );
     strncpy( (char *)&(dref.header.boxType), "dref", 4 );
     dref.entry_count    = sw32(1);
@@ -626,41 +659,69 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     memset(&stbl, 0, sizeof(BOX));
     strncpy( (char *)&(stbl.boxType), "stbl", 4 );
     fwrite( (char *)&stbl, sizeof(stbl), 1, mp4File );
+    
     write_stsd(mp4File, &avcC, (uint16_t)sw32(tkhd.width), (uint16_t)sw32(tkhd.height));
      
-    BOX_STTS stts;
-    memset(&stts, 0, sizeof(BOX_STTS));
-    strncpy( (char *)&(stts.header.boxType), "stts", 4 );
+    //stts
     int stts_entry_count = sw32(stts.entry_count);
     int stts_size        = sizeof(stts) + stts_entry_count * sizeof(STTS_ENTRY);
-    fwrite( (char *)&stts, sizeof(stts), 1, mp4File);
-    fwrite( (char *)&stts_entry, stts_entry_count * sizeof(STTS_ENTRY), 1, mp4File);
+    stts.header.boxSize  = sw32(stts_size);
+    fwrite( (char *)&stts, sizeof(stts), 1, mp4File );
+    fwrite( (char *)&stts_entry, stts_entry_count * sizeof(STTS_ENTRY), 1, mp4File );
 
-    
-    BOX_STSS stss;
-    memset(&stss, 0, sizeof(BOX_STSS));
-    strncpy( (char *)&(stss.header.boxType), "stss", 4 );
+    //stss
     stss.entry_count = sample_i;
     int stss_size    = sizeof(stss) + sizeof(uint32_t) * sample_i;
-    fwrite( (char *)&stss, sizeof(stss), 1, mp4File);
-    fwrite( (char *)&stss_entry, sample_i * sizeof(uint32_t), 1, mp4File);
+    stss.header.boxSize  = sw32(stss_size);
+    fwrite( (char *)&stss, sizeof(stss), 1, mp4File );
+    fwrite( (char *)&stss_entry, sample_i * sizeof(uint32_t), 1, mp4File );
+    
+    
+    //stsc
+    int stsc_entry_count = sw32(stsc.entry_count);
+    int stsc_size        = sizeof(stsc) + stsc_entry_count * sizeof(STSC_ENTRY);
+    stsc.header.boxSize  = sw32(stsc_size);
+    fwrite( (char *)&stsc, sizeof(stsc), 1, mp4File );
+    fwrite( (char *)&stsc_entry, stsc_entry_count * sizeof(STSC_ENTRY), 1, mp4File );
+    
+    
+    //stsz
+    int stsz_sample_count = sw32(stsz.sample_count);
+    int stsz_size         = sizeof(stsz) + stsz_sample_count * sizeof(uint32_t);
+    stsz.header.boxSize   = sw32(stsz_size);
+    fwrite( (char *)&stsc, sizeof(stsc), 1, mp4File );
+    fwrite( (char *)sample_sizes, sizeof(uint32_t) * stsz_sample_count, 1, mp4File );
     
 
-    BOX_STSC stsc;
-    memset(&stsc, 0, sizeof(BOX_STSC));
-    strncpy( (char *)&(stsc.header.boxType), "stsc", 4 );
+    //stco
+    int stco_entry_count  = sw32(stco.entry_count);
+    int stco_size         = sizeof(stco) + stco_entry_count * sizeof(uint32_t);
+    stco.header.boxSize   = sw32(stco_size);
+    fwrite( (char *)&stco, sizeof(stco), 1, mp4File );
+    fwrite( (char *)chunk_offset, sizeof(uint32_t) * stco_entry_count, 1, mp4File );
 
-    BOX_STSZ stsz;
-    memset(&stsz, 0, sizeof(BOX_STSZ));
-    strncpy( (char *)&(stsz.header.boxType), "stsz", 4 );
 
-    BOX_STCO stco;
-    memset(&stco, 0, sizeof(BOX_STCO));
-    strncpy( (char *)&(stco.header.boxType), "stco", 4 );
+    int file_end = ftell(mp4File);
+    fseek(mp4File, moov_offset, SEEK_SET);
+    moov.boxSize = sw32(file_end - moov_offset);
+    fwrite( (char *)&(moov.boxSize), sizeof(uint32_t), 1, mp4File );
 
-    //七级 在stsd下
-   
-    
+    fseek(mp4File, trak_offset, SEEK_SET);
+    trak.boxSize = sw32(file_end - trak_offset);
+    fwrite( (char *)&(trak.boxSize), sizeof(uint32_t), 1, mp4File );
+
+    fseek(mp4File, mdia_offset, SEEK_SET);
+    mdia.boxSize = sw32(file_end - mdia_offset);
+    fwrite( (char *)&(mdia.boxSize), sizeof(uint32_t), 1, mp4File );
+
+
+    fseek(mp4File, minf_offset, SEEK_SET);
+    minf.boxSize = sw32(file_end - minf_offset);
+    fwrite( (char *)&(minf.boxSize), sizeof(uint32_t), 1, mp4File );
+
+    fseek(mp4File, stbl_offset, SEEK_SET);
+    stbl.boxSize = sw32(file_end - stbl_offset);
+    fwrite( (char *)&(stbl.boxSize), sizeof(uint32_t), 1, mp4File );
     /*-----trak-----*/
     return 0;
 }

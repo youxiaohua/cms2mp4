@@ -81,7 +81,7 @@ int get_nalu(FILE *cmsFile, char *buf, int DataSize, int *state) {
         return -1;
     }
     pos = 4;
-    DataSize = DataSize - pos;
+    DataSize = DataSize - 4;
     while(1) {
         if( feof(cmsFile) ) {
             *state = FILE_END;
@@ -92,11 +92,11 @@ int get_nalu(FILE *cmsFile, char *buf, int DataSize, int *state) {
             break;
         }
         buf[pos] = fgetc(cmsFile);
-        DataSize = DataSize - 1;
+        DataSize--;
         if( buf[pos - 3] == 0 && buf[pos - 2] == 0 && buf[pos - 1] == 0 && buf[pos] == 1 ) {
             fseek(cmsFile, -4, SEEK_CUR);
             DataSize = DataSize + 4;
-            pos = pos - 4;
+            pos      = pos - 4;
             break;
         }
         pos++;
@@ -110,7 +110,7 @@ uint32_t write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC
     unsigned char *nalu = NULL;
     unsigned char naluType;
     unsigned int  offset = ftell(mp4File);  //保存当前数据的吸入位置
-    //printf("offset: %d\n", offset);
+    printf("datasize: %d\n", DataSize);
     int len = 0;
     int state = 0;
     while( state == 0 ) {
@@ -124,7 +124,8 @@ uint32_t write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC
         case 0x07:
             if(FristWirteSample) {
                 //收集spsx信息
-                printf("%d\n", len);
+                printf("%d %d\n", len, DataSize);
+               
                 avcC->AVCProFileIndication  = nalu[1];
                 avcC->profile_compatibility = nalu[2];
                 avcC->AVCLevelIndication    = nalu[3];
@@ -146,7 +147,9 @@ uint32_t write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC
         case 0x06:
             if(FristWirteSample) {
                 //收集pps信息
-                printf("%d\n", len);
+                printf("%d %d\n", len, DataSize);
+                sleep(1);
+                getchar();
                 avcC->pps_count             = 1;
                 uint16_t pps_size           = len;
                 avcC->pps_size              = sw16(pps_size);

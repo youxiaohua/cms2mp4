@@ -1,11 +1,12 @@
 #include "2MP4.h"
 
 
-uint32_t sw(uint32_t x){
-    return sw32(x);
+uint32_t sw32(uint32_t x){
+    return x;
+    //return _sw32(x);
 }
-uint32_t sw6(uint64_t x){
-    return sw64(x);
+uint64_t sw64(uint64_t x){
+    return _sw64(x);
 }
 
 
@@ -31,43 +32,43 @@ int get_information(char *value, BOX_TKHD *tkhd){
     }
 }
 uint32_t add_sample_size(uint32_t sample_count, uint32_t **sample_sizes, int DataSize) {
-    //printf("add_sample_size\n");
     if(sample_count == 0) {
         (*sample_sizes)[0] = sw32(DataSize);
         return sw32(1);
+    }else{
+        sample_count = sw32(sample_count) + 1;
+        *sample_sizes = (uint32_t *)realloc(*sample_sizes, sizeof(uint32_t) * sample_count);
+        (*sample_sizes)[sample_count - 1] = sw32(DataSize);
     }
-    sample_count = sw32(sample_count) + 1;
-    *sample_sizes = (uint32_t *)realloc(*sample_sizes, sizeof(uint32_t) * sample_count);
-    (*sample_sizes)[sample_count - 1] = sw32(DataSize);
     return sw32(sample_count);
 }
 
 //读取到时间间隔时写入 stts中
 void add_delta( uint32_t delta, STTS_ENTRY **stts_entry, BOX_STTS *stts ) {
-    //printf("add_delta\n");
     if( delta == 0 ){ return; }
     delta = sw32( delta );
-    stts->entry_count = sw32( stts->entry_count ); //先转换成小端序  用完再转回大端序
-    if( stts->entry_count == 0 ) {
+    int entry_count = sw32( stts->entry_count ); //先转换成小端序  用完再转回大端序
+    if( entry_count == 0 ) {
         (*stts_entry)->sample_count = sw32( 1 );
-        (*stts_entry)->sample_delta = sw32(delta);
+        (*stts_entry)->sample_delta = delta;
+        stts->entry_count           = sw32(1);
         return;
     }
-    int i, find = 0;
-    
-    for( i = 0; i < stts->entry_count; i++ ) {
+    int i = 0;
+    bool find = false;
+    for( i = 0; i < entry_count; i++ ) {
         if( (*stts_entry)[i].sample_delta == delta){
             (*stts_entry)[i].sample_count = (*stts_entry)[i].sample_count + sw32( 1 );
-            find = 1;
+            find = true;
         }
     }
-    if( find == 0 ) {
-        stts->entry_count = stts->entry_count +  1 ;
-        *stts_entry = (STTS_ENTRY *)realloc(stts_entry, sizeof(STTS_ENTRY) * stts->entry_count);
-        (*stts_entry)[stts->entry_count].sample_count = sw32( 1 );
-        (*stts_entry)[stts->entry_count].sample_delta = sw32(delta);
+    if( !find ) {
+        entry_count++;
+        *stts_entry = (STTS_ENTRY *)realloc(*stts_entry, sizeof(STTS_ENTRY) * entry_count);
+        (*stts_entry)[entry_count - 1].sample_count = sw32( 1 );
+        (*stts_entry)[entry_count - 1].sample_delta = delta;
     }
-    stts->entry_count = sw32( stts->entry_count );
+    stts->entry_count = sw32(entry_count);
 }
 
 //获取每段sample的nalu
@@ -123,6 +124,7 @@ uint32_t write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC
         case 0x07:
             if(FristWirteSample) {
                 //收集spsx信息
+                printf("%d\n", len);
                 avcC->AVCProFileIndication  = nalu[1];
                 avcC->profile_compatibility = nalu[2];
                 avcC->AVCLevelIndication    = nalu[3];
@@ -130,7 +132,9 @@ uint32_t write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC
                 avcC->sps_count             = 1;
                 uint16_t sps_size           = len;
                 avcC->sps_size              = sw16(sps_size);
-                avcC->sps                   = strdup(nalu);
+                avcC->sps                   = calloc(1, len);
+                memcpy( (void *)avcC->sps, (void *)nalu, len );
+                
                 
             }
             buf[0] = ( len >> 24 ) & 0xff;
@@ -142,10 +146,12 @@ uint32_t write_sample(FILE *cmsFile, FILE *mp4File, int DataSize, BOX_AVCC *avcC
         case 0x06:
             if(FristWirteSample) {
                 //收集pps信息
+                printf("%d\n", len);
                 avcC->pps_count             = 1;
                 uint16_t pps_size           = len;
                 avcC->pps_size              = sw16(pps_size);
-                avcC->pps                   = strdup(nalu);
+                avcC->pps                   = calloc(1, len);
+                memcpy( (void *)avcC->pps, (void *)nalu, len );
                 FristWirteSample = false; 
             }
             buf[0] = ( len >> 24 ) & 0xff;
@@ -186,21 +192,18 @@ int create_chunk(BOX_STSC *stsc, STSC_ENTRY **stsc_entry) {
         (*stsc_entry)[count -1].sample_description_index  = sw32(1);
         stsc->entry_count                                 = sw32(count);
     }
-
 }
 int add_chunk_offset(BOX_STCO *stco,  uint32_t **chunk_offset, uint32_t offset) {
     if(stco->entry_count == 0){
         stco->entry_count   = sw32(1);
         (*chunk_offset)[0]  = sw32(offset);
     }else{
-        uint32_t count = sw32(stco->entry_count);
-        
+        uint32_t count = sw32(stco->entry_count);        
         count++;
         *chunk_offset  = (uint32_t *)realloc(*chunk_offset, sizeof(uint32_t) * count);
         (*chunk_offset)[count - 1] = sw32(offset);
         stco->entry_count = sw32(count); //
     }
-
 }
 
 int write_stsd(FILE *mp4File, BOX_AVCC *avcC, uint16_t width, uint16_t height) {
@@ -219,12 +222,12 @@ int write_stsd(FILE *mp4File, BOX_AVCC *avcC, uint16_t width, uint16_t height) {
     avc1.frame_count          = sw16(1);
     avc1.depth                = sw16(0x0018);
     avc1.pre_defined          = 0xffff; //-1
-    int avcC_size             = sizeof(BOX_AVCC) + avcC->sps_size + avcC->pps_size - 8;
+    int avcC_size             = sizeof(BOX_AVCC) + sw16(avcC->sps_size) + sw16(avcC->pps_size) - 2 * sizeof(uint8_t *);
     int avc1_size             = sizeof(avc1) + avcC_size;
     int stsd_size             = sizeof(stsd) + avc1_size;
-    stsd.header.boxSize       = sw32(avc1_size + avcC_size);
+    stsd.header.boxSize       = sw32(stsd_size);
     avcC->header.boxSize      = sw32(avcC_size);
-    avc1.header.boxSize       = sw32( avc1_size );
+    avc1.header.boxSize       = sw32(avc1_size);
     fwrite( (char *)&stsd, sizeof(stsd), 1, mp4File);
     fwrite( (char *)&avc1, sizeof(avc1), 1, mp4File);
     fwrite( (char *)avcC, 17, 1, mp4File);
@@ -244,9 +247,8 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     BOX_FTYP ftyp;
     memset(&ftyp, 0, sizeof(BOX_STTS));
 
-    BOX_LARGE mdat;
-    memset(&mdat, 0, sizeof(BOX_LARGE));
-    mdat.boxSize = sw32(1);
+    BOX mdat;
+    memset(&mdat, 0, sizeof(BOX));
     strncpy( (char *)&(mdat.boxType), "mdat", 4 );
    
     BOX_TKHD tkhd;
@@ -285,11 +287,12 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 
     
     
-    FILE *mp4File = fopen( mp4Name, "wb" );
+    FILE *mp4File = fopen( mp4Name, "wb+" );
     if(mp4File == NULL) {
         printf("创建MP4文件失败");
     }
     //写入mp4头部
+    setbuf(mp4File, NULL);
     ftyp.header.boxSize = sw32( sizeof( ftyp ) );
     strncpy( (char *)&(ftyp.header.boxType), "ftyp", 4 );
     FTYP_BRANDS f_isom = { "isom" };
@@ -466,7 +469,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                             DataType = CMS_AUDIO;
                         } else if (strcmp(value, "j") == 0) {
                         }
-                    } else if (strcmp(key, "ts") == 0) {
+                    }else if(strcmp(key, "ts") == 0) {
                         if(DataType == CMS_VEDIO_I || DataType == CMS_VEDIO_P) {
                             last = now;
                             now  = strtol(value, NULL, 10);
@@ -474,12 +477,11 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
                             //printf("%s  last : %d   now : %d delta : %d \n", value, last, now, delta);
                             add_delta(delta, &stts_entry, &stts);
                         }
-                    } else if (strcmp(key, "l") == 0) {
+                    }else if(strcmp(key, "l") == 0){
                         if(DataType == CMS_VEDIO_I || DataType == CMS_VEDIO_P) {
                             DataSize = strtol(value, NULL, 10) ;
                             //printf("value : %s DataSize : %d\n", value, DataSize);
                             stsz.sample_count = add_sample_size(stsz.sample_count, &sample_sizes, DataSize);
-                            int i = sw32(stsz.sample_count);
                             
                         }
                         
@@ -508,10 +510,11 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 //视频数据读取完 整理数据填入box中并写入mp4File中
 
     //fseek回到mdat的largeBoxSize 写入数据的大小
-    long int mdat_size = ftell(mp4File) - sizeof(ftyp);
-    mdat.largeBoxSize  = sw64(mdat_size);
-    fseek(mp4File, sizeof(ftyp) + sizeof(BOX) , SEEK_SET);
-    fwrite((char *)&mdat_size, sizeof(long int), 1, mp4File);
+    int mdat_size = ftell(mp4File) - sizeof(ftyp);
+    printf("mdat : %d\n", mdat_size);
+    mdat.boxSize  = sw32(mdat_size);
+    fseek(mp4File, sizeof(ftyp), SEEK_SET);
+    fwrite((char *)&mdat.boxSize, sizeof(uint32_t), 1, mp4File);
     fseek(mp4File, 0, SEEK_END);
 
 
@@ -540,6 +543,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     fwrite(&mvhd, sizeof(mvhd), 1, mp4File);
 
     /*-----写入trak-----*/
+    char t;
     BOX trak;
     memset(&trak, 0, sizeof(BOX));
     strncpy( (char *)&(trak.boxType), "trak", 4 );
@@ -549,7 +553,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
 
 
     //tkhd
-    
+   
     tkhd.header.boxSize = sw32(sizeof(tkhd));
     tkhd.full_box.flags = 0x0f0000;  //转换成大端序后的值 原值为0x00000f 位或操作 设置改trak是否播放等信息 
     tkhd.track_id       = sw32(1);
@@ -559,7 +563,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     tkhd.matrix[4]      = mvhd.rate;
     tkhd.matrix[8]      = sw32(0x40000000);
     fwrite(&tkhd, sizeof(tkhd), 1, mp4File);
-    
+
     //edts
     BOX edts;
     EDTS_ELST elst;
@@ -588,6 +592,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     memset(&mdia, 0, sizeof(BOX));
     strncpy( (char *)&(mdia.boxType), "mdia", 4 );
     fwrite(&mdia, sizeof(mdia), 1, mp4File);
+
     
     BOX_MDHD mdhd;
     memset(&mdhd, 0, sizeof(BOX_MDHD));
@@ -604,7 +609,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     */
     fwrite( (char *)&mdhd, sizeof(mdhd), 1, mp4File );
 
-
+    
     BOX_HDLR hdlr;
     int hdlr_size;
     memset(&hdlr, 0, sizeof(BOX_HDLR));
@@ -617,6 +622,7 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     fwrite( hdlr.name, strlen(hdlr.name), 1, mp4File);
     free(hdlr.name);
 
+   
     //minf
     BOX minf;
     int minf_offset = ftell(mp4File);
@@ -632,6 +638,8 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     vmhd.header.boxSize = sw32(sizeof(vmhd));
     fwrite( (char *)&vmhd, sizeof(vmhd), 1, mp4File );
 
+
+    
     BOX dinf;
     DREF_URL url;
     DINF_DREF dref;
@@ -649,11 +657,13 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     dref_size           = sizeof(url) + sizeof(dref);
     dinf_size           = dref_size + sizeof(dinf);
     dref.header.boxSize = sw32(dref_size);
-    dinf.boxSize        = sw32(dref_size);
+    dinf.boxSize        = sw32(dinf_size);
     fwrite( (char *)&dinf, dinf_size, 1, mp4File );
     fwrite( (char *)&dref, dref_size, 1, mp4File );
     fwrite( (char *)&url, sizeof(url), 1, mp4File );
 
+    
+    int current;
     BOX stbl;
     int stbl_offset = ftell(mp4File);
     memset(&stbl, 0, sizeof(BOX));
@@ -667,14 +677,18 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     int stts_size        = sizeof(stts) + stts_entry_count * sizeof(STTS_ENTRY);
     stts.header.boxSize  = sw32(stts_size);
     fwrite( (char *)&stts, sizeof(stts), 1, mp4File );
-    fwrite( (char *)&stts_entry, stts_entry_count * sizeof(STTS_ENTRY), 1, mp4File );
+    for(current = 0; current < stts_entry_count; current++) {
+        fwrite( (char *)&stts_entry[current], sizeof(STTS_ENTRY), 1, mp4File );
+    }
 
     //stss
     stss.entry_count = sample_i;
     int stss_size    = sizeof(stss) + sizeof(uint32_t) * sample_i;
     stss.header.boxSize  = sw32(stss_size);
     fwrite( (char *)&stss, sizeof(stss), 1, mp4File );
-    fwrite( (char *)&stss_entry, sample_i * sizeof(uint32_t), 1, mp4File );
+    for(current = 0; current < sample_i; current++) {
+        fwrite( (char *)&stss_entry[current], sizeof(uint32_t), 1, mp4File );
+    }
     
     
     //stsc
@@ -682,7 +696,9 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     int stsc_size        = sizeof(stsc) + stsc_entry_count * sizeof(STSC_ENTRY);
     stsc.header.boxSize  = sw32(stsc_size);
     fwrite( (char *)&stsc, sizeof(stsc), 1, mp4File );
-    fwrite( (char *)&stsc_entry, stsc_entry_count * sizeof(STSC_ENTRY), 1, mp4File );
+    for(current = 0; current < stsc_entry_count; current++) {
+        fwrite( (char *)&stsc_entry[current], sizeof(STSC_ENTRY), 1, mp4File );
+    }
     
     
     //stsz
@@ -690,7 +706,9 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     int stsz_size         = sizeof(stsz) + stsz_sample_count * sizeof(uint32_t);
     stsz.header.boxSize   = sw32(stsz_size);
     fwrite( (char *)&stsc, sizeof(stsc), 1, mp4File );
-    fwrite( (char *)sample_sizes, sizeof(uint32_t) * stsz_sample_count, 1, mp4File );
+    for(current = 0; current < stsz_sample_count; current++) {
+        fwrite( (char *)&sample_sizes[current], sizeof(uint32_t), 1, mp4File );
+    }
     
 
     //stco
@@ -698,7 +716,9 @@ int cms2mp4(FILE *cmsFile, char *mp4Name){
     int stco_size         = sizeof(stco) + stco_entry_count * sizeof(uint32_t);
     stco.header.boxSize   = sw32(stco_size);
     fwrite( (char *)&stco, sizeof(stco), 1, mp4File );
-    fwrite( (char *)chunk_offset, sizeof(uint32_t) * stco_entry_count, 1, mp4File );
+    for(current = 0; current < stco_entry_count; current++) {
+        fwrite( (char *)&chunk_offset[current], sizeof(uint32_t), 1, mp4File );
+    }
 
 
     int file_end = ftell(mp4File);

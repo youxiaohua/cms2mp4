@@ -9,7 +9,7 @@
 #include<stdbool.h>
 
 
-#define sw64(x)  ( ( ( (uint64_t)(x) & 0xff00000000000000 ) >> 56 ) | \
+#define _sw64(x)  ( ( ( (uint64_t)(x) & 0xff00000000000000 ) >> 56 ) | \
                    ( ( (uint64_t)(x) & 0x00ff000000000000 ) >> 40 ) | \
                    ( ( (uint64_t)(x) & 0x0000ff0000000000 ) >> 24 ) | \
                    ( ( (uint64_t)(x) & 0x000000ff00000000 ) >> 8  ) | \
@@ -20,7 +20,7 @@
 
 
 
-#define sw32(x)  ( ( ( (uint32_t)(x) & 0xff000000 ) >> 24 ) | \
+#define _sw32(x)  ( ( ( (uint32_t)(x) & 0xff000000 ) >> 24 ) | \
                    ( ( (uint32_t)(x) & 0x00ff0000 ) >> 8  ) | \
                    ( ( (uint32_t)(x) & 0x0000ff00 ) << 8  ) | \
                    ( ( (uint32_t)(x) & 0x000000ff ) << 24 ) )
@@ -231,6 +231,11 @@ typedef struct box_avcC{//在avc1里面, 视频的解码信息里面有sps pps�
 }BOX_AVCC;
 
 
+/*
+
+
+
+ */
 //stts
 
 typedef struct stts_entry{
@@ -246,7 +251,7 @@ typedef struct box_stts{//时间间隔和sample数量
 }BOX_STTS;
 
 
-typedef struct box_stsz{//包含sample的数量和每个sample的字节大小
+typedef struct box_stsz{//包含samp  cle的数量和每个sample的字节大小
     BOX         header;
     FULL_BOX    full_box;
     uint32_t    sample_size;          //全部sample的数据，如果所有的sample有相同的长度,这个字段就是这个值,否则为0          
@@ -271,7 +276,7 @@ typedef struct box_stss{//包含media中的关键帧的sample表,此表不存在
     BOX        header;
     FULL_BOX   full_box;
     uint32_t   entry_count;
-    //uint32_t   *sample_number;            //sample关键帧的序号
+    //uint32_t *sample_number;          //sample关键帧的序号
 }BOX_STSS;
 
 typedef struct box_stco{//储存每个chunk在文件的位置
@@ -303,7 +308,8 @@ typedef enum{
     CMS_AUDIO,
 }CMS_DATA_TYPE;
 
-uint32_t sw(uint32_t x);
+uint32_t sw32(uint32_t x);
+uint64_t sw64(uint64_t x);
 
 bool FristWirteSample = true;
 
